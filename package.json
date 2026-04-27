@@ -1,0 +1,14 @@
+{
+  "name": "build-oborona",
+  "version": "1.0.0",
+  "private": true,
+  "description": "오보로나 canvas chase game",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {},
+  "engines": {
+    "node": ">=18"
+  }
+}

@@ -1,0 +1,110 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>오보로나</title>
+    <meta name="description" content="끝없이 확장되는 도시에서 Punk Club을 찾아 달리는 오보로나">
+    <meta property="og:title" content="오보로나">
+    <meta property="og:description" content="끝없이 확장되는 펑크 클럽 추격전">
+    <meta property="og:image" content="/thumbnail.svg">
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:image" content="/thumbnail.svg">
+    <link rel="icon" href="/thumbnail.svg" type="image/svg+xml">
+    <link rel="stylesheet" href="/styles.css">
+  </head>
+  <body>
+    <main class="shell">
+      <section class="game-wrap" aria-label="오보로나 게임">
+        <canvas id="game" width="960" height="540" aria-label="오보로나 게임 화면"></canvas>
+        <div class="gesture-hud" aria-hidden="true">
+          <div class="gesture-pad">
+            <span class="gesture-knob"></span>
+          </div>
+          <div class="gesture-actions">
+            <span>Tap</span>
+            <span>2 Tap</span>
+            <span>Hold</span>
+          </div>
+        </div>
+        <div id="overlay" class="overlay">
+          <div class="title">
+            <p class="kicker">PUNK CLUB CHASE</p>
+            <h1>오보로나</h1>
+            <form id="scoreForm" class="score-form hidden" autocomplete="off">
+              <p id="finalScore">최종 점수 0</p>
+              <div>
+                <input id="playerName" name="name" maxlength="16" placeholder="이름 입력" aria-label="하이스코어 이름">
+                <button type="submit">전당 등록</button>
+              </div>
+              <small id="scoreStatus" aria-live="polite"></small>
+            </form>
+            <button id="startButton" class="start">Press to Start</button>
+          </div>
+          <div class="select">
+            <button class="character active" data-character="egor">
+              <span class="sprite egor"></span>
+              <strong>예고르</strong>
+              <small>공격 x2, 방어 x1.5, 체력 x0.8<br>나의 방어: 무적 +5초, -500점</small>
+            </button>
+            <button class="character" data-character="roman">
+              <span class="sprite roman"></span>
+              <strong>로만</strong>
+              <small>방어 x2, 체력 x1<br>신앙심: 치명타 무효 10%</small>
+            </button>
+            <button class="character" data-character="didiramon">
+              <span class="sprite didiramon"></span>
+              <strong>디디라몬</strong>
+              <small>자본 x1.2, 공격 x1.5, 체력 x1.2<br>미국의 자본력: 가격 10% 할인</small>
+            </button>
+            <button class="character" data-character="jundai">
+              <span class="sprite jundai"></span>
+              <strong>준다이</strong>
+              <small>체력 x2, 공격 x1.5, 방어 x0.8<br>조선펑크: 10초 광역 지속 피해 + 회복</small>
+            </button>
+          </div>
+        </div>
+      </section>
+
+      <aside class="panel">
+        <div class="stats">
+          <div><span>점수</span><strong id="score">0</strong></div>
+          <div><span>체력</span><strong id="hp">100</strong></div>
+          <div><span>경찰 속도</span><strong id="policeSpeed">1.00x</strong></div>
+          <div><span>무적</span><strong id="invincible">0.0s</strong></div>
+          <div><span>장소</span><strong id="location">뉴욕 1/4</strong></div>
+          <div><span>동료</span><strong id="crew">없음</strong></div>
+          <div class="wide"><span>활성 효과</span><strong id="buffs">없음</strong></div>
+        </div>
+
+        <div class="controls">
+          <button id="strum">일렉기타 / 클럽 입장 <b>Space</b></button>
+          <button id="power">파워코드 <b>F</b></button>
+          <button id="rock" disabled>락네버다이 <b>R</b></button>
+          <button id="skill">캐릭터 스킬 <b>E</b></button>
+          <button id="concert" disabled>게릴라 락 콘서트 <b>G</b></button>
+        </div>
+
+        <div class="shop">
+          <h2>Punk Club 내부 샵</h2>
+          <div id="shopItems" class="shop-items"></div>
+          <p id="shopHint">클럽 근처에 도착하면 아티팩트를 살 수 있습니다.</p>
+        </div>
+
+        <div class="hall">
+          <div class="hall-head">
+            <h2>전당</h2>
+            <button id="refreshScores" type="button" aria-label="전당 새로고침">↻</button>
+          </div>
+          <ol id="scoreList" class="score-list">
+            <li>기록을 불러오는 중...</li>
+          </ol>
+        </div>
+
+        <div class="log" id="log" aria-live="polite"></div>
+      </aside>
+    </main>
+    <footer>Built on public vibe-coding platform</footer>
+    <script src="/game.js"></script>
+  </body>
+</html>
