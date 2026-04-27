@@ -366,6 +366,17 @@ button:disabled {
   border: 1px solid #495350;
 }
 
+.shop button span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.shop button b {
+  flex: 0 0 auto;
+  margin-left: 10px;
+  white-space: nowrap;
+}
+
 .shop i {
   display: inline-grid;
   place-items: center;
@@ -616,7 +627,16 @@ footer {
   .shop button {
     min-height: 44px;
     padding: 7px 8px;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 4px 8px;
+    align-items: center;
     font-size: 13px;
+  }
+
+  .shop button b {
+    margin-left: 0;
+    font-size: 12px;
   }
 
   #shopHint {
@@ -679,6 +699,19 @@ footer {
 
   .score-form div {
     grid-template-columns: 1fr;
+  }
+
+  .shop h2 {
+    margin-bottom: 6px;
+    font-size: 14px;
+  }
+
+  .shop button {
+    grid-template-columns: 1fr;
+  }
+
+  .shop button b {
+    justify-self: start;
   }
 }
 
