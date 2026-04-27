@@ -745,7 +745,8 @@ function handlePointerUp(event) {
   if (!wasTap) return;
   const now = performance.now();
   if (state && state.inShop) {
-    exitShop();
+    const itemIndex = shopItemIndexAt(event.clientX, event.clientY);
+    if (itemIndex >= 0) buySlot(itemIndex);
     touchInput.lastTap = 0;
     return;
   }
@@ -916,8 +917,8 @@ function update(dt) {
   const clubNear = nearClub();
   ui.shopHint.textContent = state.inShop
     ? state.concertTimer > 0
-      ? `게릴라 콘서트 할인 ${Math.ceil(state.concertTimer)}초 남음. 숫자키 1-5로 구매.`
-      : "클럽 내부 샵. 같은 아이템도 제한 없이 숫자키 1-5로 계속 구매합니다."
+      ? `게릴라 콘서트 할인 ${Math.ceil(state.concertTimer)}초 남음. 중앙 샵 아이템을 누르거나 숫자키 1-5로 구매.`
+      : "클럽 내부 샵. 중앙 샵 아이템을 누르면 같은 아이템도 제한 없이 계속 구매합니다."
     : clubNear
       ? "Punk Club 앞입니다. Space를 누르면 추격을 멈추고 샵에 들어갑니다."
       : "랜덤 도시를 자유롭게 이동해 Punk Club을 찾으세요.";
@@ -1439,8 +1440,55 @@ function drawShopInterior() {
 
   ctx.fillStyle = "#b9b0a3";
   ctx.font = "700 13px monospace";
-  ctx.fillText("1-5 UNLIMITED REBUY   ESC EXIT", 352, 410);
+  ctx.fillText("TAP ITEM / 1-5 BUY   ESC EXIT", 344, 410);
   ctx.restore();
+}
+
+function shopItemRects() {
+  const compact = canvas.width < 620 || canvas.height < 360;
+  if (!compact) {
+    return artifacts.map((item, index) => ({
+      index,
+      x: 270,
+      y: 222 + index * 40 - 23,
+      w: 420,
+      h: 32
+    }));
+  }
+
+  const margin = Math.max(8, Math.min(12, Math.floor(canvas.width * 0.03)));
+  const x = margin;
+  const y = margin;
+  const w = Math.max(1, canvas.width - margin * 2);
+  const h = Math.max(1, canvas.height - margin * 2);
+  const itemCount = Math.min(artifacts.length, h < 150 ? 3 : 5);
+  const top = y + Math.max(43, Math.min(50, h * 0.22));
+  const footerH = h < 160 ? 16 : 24;
+  const rowH = Math.max(22, Math.min(31, (h - (top - y) - footerH) / itemCount));
+
+  return artifacts.slice(0, itemCount).map((item, index) => ({
+    index,
+    x: x + 10,
+    y: top + index * rowH - 16,
+    w: w - 20,
+    h: rowH - 4
+  }));
+}
+
+function shopItemIndexAt(clientX, clientY) {
+  if (!state || !state.inShop) return -1;
+  const rect = canvas.getBoundingClientRect();
+  const scaleX = canvas.width / Math.max(1, rect.width);
+  const scaleY = canvas.height / Math.max(1, rect.height);
+  const x = (clientX - rect.left) * scaleX;
+  const y = (clientY - rect.top) * scaleY;
+  const hit = shopItemRects().find(item =>
+    x >= item.x &&
+    x <= item.x + item.w &&
+    y >= item.y &&
+    y <= item.y + item.h
+  );
+  return hit ? hit.index : -1;
 }
 
 function drawCompactShopInterior() {
@@ -1500,7 +1548,7 @@ function drawCompactShopInterior() {
   ctx.textAlign = "left";
   ctx.fillStyle = "#b9b0a3";
   ctx.font = "800 10px monospace";
-  ctx.fillText("1-5 BUY   ESC EXIT", x + 12, y + h - 10);
+  ctx.fillText("TAP ITEM / 1-5 BUY", x + 12, y + h - 10);
 }
 
 function drawAllyChoice() {
