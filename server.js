@@ -4,7 +4,7 @@ const path = require("path");
 
 const port = process.env.PORT || 3000;
 const publicDir = path.join(__dirname, "public");
-const dataDir = process.env.DATA_DIR || path.join(__dirname, "data");
+const dataDir = process.env.DATA_DIR || (process.env.NODE_ENV === "production" ? "/app/data" : path.join(__dirname, "data"));
 const scoresFile = path.join(dataDir, "scores.json");
 const maxBodyBytes = 4096;
 
@@ -50,6 +50,8 @@ function readScores() {
         score: Math.max(0, Math.floor(entry.score)),
         character: typeof entry.character === "string" ? entry.character.slice(0, 16) : "unknown",
         location: typeof entry.location === "string" ? entry.location.slice(0, 24) : "",
+        title: typeof entry.title === "string" ? entry.title.slice(0, 32) : "",
+        titleDescription: typeof entry.titleDescription === "string" ? entry.titleDescription.slice(0, 240) : "",
         createdAt: typeof entry.createdAt === "string" ? entry.createdAt : new Date().toISOString()
       }))
       .sort((a, b) => b.score - a.score)
@@ -70,6 +72,14 @@ function cleanName(value) {
     .replace(/\s+/g, " ")
     .trim()
     .slice(0, 16) || "무명펑크";
+}
+
+function cleanText(value, limit) {
+  return String(value || "")
+    .replace(/[<>]/g, "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, limit);
 }
 
 function handleScoresPost(req, res) {
@@ -101,6 +111,8 @@ function handleScoresPost(req, res) {
       score,
       character: cleanName(payload.character || "unknown"),
       location: cleanName(payload.location || ""),
+      title: cleanText(payload.title || "칭호 없음", 32) || "칭호 없음",
+      titleDescription: cleanText(payload.titleDescription || "", 240),
       createdAt: new Date().toISOString()
     };
     const scores = [...readScores(), entry].sort((a, b) => b.score - a.score).slice(0, 20);

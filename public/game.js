@@ -6,6 +6,8 @@ const ui = {
   start: document.getElementById("startButton"),
   score: document.getElementById("score"),
   hp: document.getElementById("hp"),
+  fame: document.getElementById("fame"),
+  punk: document.getElementById("punk"),
   policeSpeed: document.getElementById("policeSpeed"),
   invincible: document.getElementById("invincible"),
   strum: document.getElementById("strum"),
@@ -15,6 +17,7 @@ const ui = {
   concert: document.getElementById("concert"),
   location: document.getElementById("location"),
   crew: document.getElementById("crew"),
+  titleStatus: document.getElementById("titleStatus"),
   buffs: document.getElementById("buffs"),
   shopItems: document.getElementById("shopItems"),
   shopHint: document.getElementById("shopHint"),
@@ -35,15 +38,20 @@ const WORLD_EDGE_TRIGGER = 920;
 const WORLD_EDGE_BUFFER = 42;
 const WORLD_CHAIN_EXPANSIONS = 2;
 const ROAD_W = 132;
-const SHOP_KEYS = ["Digit1", "Digit2", "Digit3", "Digit4", "Digit5"];
-const SHOP_NUMBERS = ["1", "2", "3", "4", "5"];
-const LOCATIONS = ["뉴욕", "런던", "옴스크", "서울"];
+const SHOP_KEYS = ["Digit1", "Digit2", "Digit3", "Digit4", "Digit5", "Digit6", "Digit7", "Digit8"];
+const SHOP_NUMBERS = ["1", "2", "3", "4", "5", "6", "7", "8"];
+const LOCATIONS = ["뉴욕", "런던", "옴스크", "서울", "브리즈번"];
 const LOCATION_TARGET = 20000;
 const CREW_OFFER_INTERVAL = 300;
 const MAX_PARTY_SIZE = 3;
 const MAX_CREW = MAX_PARTY_SIZE - 1;
 const POLICE_RESPAWN_INTERVAL = 18;
 const POLICE_MAX = 9;
+const NOTE_DAMAGE = 58;
+const POWER_NOTE_DAMAGE = 82;
+const FAME_TIGER_TARGET = 1000;
+const ATLANTIC_FAME_TARGET = 500;
+const PUNK_TARGET = 500;
 const CANVAS_MIN_W = 1;
 const CANVAS_MIN_H = 1;
 const JOSEON_PUNK_DURATION = 10;
@@ -70,6 +78,21 @@ const NOTE_FREQUENCIES = {
   "G#4": 415.3,
   "A4": 440,
   "B4": 493.88
+};
+
+const clearTitles = {
+  tiger: {
+    name: "언더 씬의 맹호",
+    desc: "당신은 펑크의 맹호입니다. 당신의 동료들은 떠나기도 남기도 했지만, 록은 죽지 않습니다."
+  },
+  immortal: {
+    name: "불멸의 펑크족",
+    desc: "명성을 포기하고 펑크를 택한 당신! 그러나 언젠간 단순 심볼이 될까요?"
+  },
+  symbol: {
+    name: "펑크의 심볼",
+    desc: "쇼 비즈니스의 심볼인 당신은 저택에 사는 부자가 되었습니다. 화이트 와인을 든 당신의 손목에는 'PUNK NOT DEAD' 타투가 어색하게 가려져 있습니다."
+  }
 };
 
 const characters = {
@@ -116,7 +139,10 @@ const artifacts = [
   { id: "jacket", name: "가죽재킷", price: 800, desc: "35초간 방어력 2배", duration: 35, buff: { defense: 2 } },
   { id: "bike", name: "오토바이 대여", price: 950, desc: "22초간 속도 2배", duration: 22, buff: { speed: 2 } },
   { id: "beer", name: "맥주", price: 300, desc: "8초간 체력 회복", duration: 8, buff: { regen: 15 } },
-  { id: "vodka", name: "보드카", price: 550, desc: "26초간 체력 -20, 공격력 1.5배", duration: 26, buff: { attack: 1.5, hpCost: 20 } }
+  { id: "vodka", name: "보드카", price: 550, desc: "26초간 체력 -20, 공격력 1.5배", duration: 26, buff: { attack: 1.5, hpCost: 20 } },
+  { id: "underground", name: "지하 음반 유통", price: 850, desc: "명성 +95. 브리즈번 클리어의 핵심", instant: { fame: 95 } },
+  { id: "citizen", name: "모범 시민인 척 해서 명성을 쌓기", price: 1200, desc: "명성 +120. 애틀랜틱 루트 강화", instant: { fame: 120, civic: 1 } },
+  { id: "poster", name: "사회 고발성 대자보를 붙여서 펑크력을 쌓기", price: 950, desc: "펑크력 +100. 불멸의 펑크족 루트", instant: { punk: 100 } }
 ];
 
 let selected = "egor";
@@ -174,6 +200,14 @@ function baseState() {
     character: c,
     score: 0,
     totalScore: 0,
+    fame: 0,
+    punk: 0,
+    followers: 0,
+    capitalists: 0,
+    route: "street",
+    clearTitle: null,
+    clearDescription: "",
+    clear: false,
     locationIndex: 0,
     elapsed: 0,
     nextCrewOfferAt: CREW_OFFER_INTERVAL,
@@ -287,6 +321,18 @@ function generateWorld() {
     expanded: new Set(["0,0"]),
     seed: Date.now()
   };
+}
+
+function markBrisbaneLabels() {
+  if (!state || LOCATIONS[state.locationIndex] !== "브리즈번") return;
+  const labels = [
+    { type: "klaxon", name: "크락손 레코즈" },
+    { type: "atlantic", name: "애틀랜틱 레코즈" }
+  ];
+  labels.forEach((label, index) => {
+    const club = state.world.clubs[index];
+    if (club) Object.assign(club, label);
+  });
 }
 
 function ensureWorldAroundPlayer() {
@@ -465,6 +511,29 @@ function addScore(points) {
   checkLocationAdvance();
 }
 
+function addFame(points) {
+  if (!state || state.clear) return;
+  state.fame = Math.max(0, state.fame + Math.round(points));
+  updateScenePressure();
+  checkClear();
+}
+
+function addPunk(points) {
+  if (!state || state.clear) return;
+  state.punk = Math.max(0, state.punk + Math.round(points));
+  checkClear();
+}
+
+function updateScenePressure() {
+  if (!state) return;
+  state.followers = state.route === "klaxon" ? Math.floor(state.fame / 90) : 0;
+  state.capitalists = state.route === "atlantic" ? Math.floor(state.fame / 75) : 0;
+}
+
+function activeTitleName() {
+  return state && state.clearTitle ? clearTitles[state.clearTitle].name : "없음";
+}
+
 function resetPoliceSpeed() {
   state.policeMult = 1;
 }
@@ -492,18 +561,23 @@ function startGame() {
   ui.scoreForm.querySelector("button").disabled = false;
   ui.overlay.classList.add("hidden");
   log(`${state.character.name} 출발. 경찰서 앞 골목을 찢어라.`);
-  log("뉴욕에서 시작한다. 20,000점마다 다음 장소로 넘어간다.");
+  log("뉴욕에서 시작한다. 서울 다음 목적지는 브리즈번이다.");
+  log("브리즈번의 레코즈 거점에서 명성 500/1000 또는 펑크력 500 클리어를 노려라.");
   log("도시는 끝없이 열린다. 끝에 닿으면 새 구역과 Punk Club 거점이 확장된다.");
   renderShop();
 }
 
 function strum(power = false) {
   if (!state || state.over || state.inShop) return;
-  const score = power ? 400 * state.character.powerScore : 200;
-  const speedBump = power ? 1.3 : 1.2;
+  const score = power ? 260 * state.character.powerScore : 135;
+  const speedBump = power ? 1.24 : 1.14;
   addScore(score);
+  if (LOCATIONS[state.locationIndex] === "브리즈번") {
+    addFame(power ? 4 : 2);
+    if (state.route !== "atlantic") addPunk(power ? 2 : 1);
+  }
   const applied = applyPoliceSpeedBump(speedBump);
-  state.notes.push(makeNote(state.player.x + 38, state.player.y + 10, power ? 95 : 70, 0.22, power));
+  state.notes.push(makeNote(state.player.x + 38, state.player.y + 10, power ? 76 : 56, 0.22, power));
   state.sparks.push({ x: state.player.x + 35, y: state.player.y + 16, life: 0.28, power });
   playGuitar(power);
   log(power ? `파워코드! +${Math.round(score * state.character.capital)}점, 추격 속도 x${applied.toFixed(2)}` : `일렉기타 갈기기! +${Math.round(score * state.character.capital)}점, 추격 속도 x${applied.toFixed(2)}`);
@@ -549,7 +623,7 @@ function useSkill() {
     state.skillCooldown = 28;
     state.notes.push(makeNote(state.player.x + 15, state.player.y + 18, JOSEON_PUNK_RADIUS, 0.45, true));
     state.sparks.push({ x: state.player.x + 34, y: state.player.y + 14, life: 0.42, power: true });
-    log("준다이: 조선펑크 발동. 10초간 버티며 경찰을 밀어내고 체력을 회복한다.");
+    log("준다이: 조선펑크 발동. 10초간 가까운 경찰 1명을 밀어내고 체력을 회복한다.");
   }
 }
 
@@ -569,6 +643,10 @@ function buy(id) {
   if (!state || state.over || !state.inShop) return;
   const item = artifacts.find(a => a.id === id);
   if (!item) return;
+  if ((item.id === "underground" || item.id === "citizen" || item.id === "poster") && LOCATIONS[state.locationIndex] !== "브리즈번") {
+    log("이 활동은 브리즈번 레코즈 거리에서만 제대로 먹힌다.");
+    return;
+  }
   const cost = priceFor(item);
   if (state.score < cost) {
     log(`${item.name} 구매 포인트가 부족하다.`);
@@ -576,6 +654,13 @@ function buy(id) {
   }
   state.score -= cost;
   state.buyCounts[id] = (state.buyCounts[id] || 0) + 1;
+  if (item.instant) {
+    if (item.instant.fame) addFame(item.instant.fame);
+    if (item.instant.punk) addPunk(item.instant.punk);
+    log(`${item.name} 실행 #${state.buyCounts[id]}. ${item.desc}`);
+    renderShop();
+    return;
+  }
   if (item.buff.hpCost) state.hp = Math.max(1, state.hp - item.buff.hpCost);
   state.activeBuffs.push({ id: item.id, name: item.name, remaining: item.duration, buff: item.buff });
   recalcStats();
@@ -595,6 +680,7 @@ function buySlot(index) {
 
 function enterShop() {
   if (!state || state.over || state.inShop || !nearClub()) return false;
+  activateNearbyLabel();
   state.inShop = true;
   state.policeMult = 1;
   state.shopFlash = 0.7;
@@ -603,6 +689,26 @@ function enterShop() {
   log("Punk Club 입장. 중복 구매 가능. 숫자키 1-5로 계속 구매.");
   renderShop();
   return true;
+}
+
+function activateNearbyLabel() {
+  const club = nearbyClub();
+  if (!club || LOCATIONS[state.locationIndex] !== "브리즈번") return;
+  if (club.type === "klaxon" && state.route !== "klaxon") {
+    state.route = "klaxon";
+    state.policeMult = Math.max(state.policeMult, 1.35);
+    state.policeSpawnTimer = Math.min(state.policeSpawnTimer, 4);
+    while (state.police.length < 8) state.police.push(spawnPoliceNearPlayer(460 + Math.random() * 360));
+    updateScenePressure();
+    log("크락손 레코즈 도착. 전투 모드: 경찰이 불어나지만 추종자가 명성에 따라 돈을 벌어온다.");
+  } else if (club.type === "atlantic" && state.route !== "atlantic") {
+    state.route = "atlantic";
+    state.policeMult = Math.min(state.policeMult, 0.88);
+    state.policeBaseSpeed = Math.max(100, state.policeBaseSpeed - 14);
+    updateScenePressure();
+    log("애틀랜틱 레코즈 도착. 경찰은 누그러졌지만 자본가가 명성에 붙어 체력을 갉아먹는다.");
+    log("이 루트의 목표는 명성 500이다. 펑크력 500을 택해 다른 결말도 가능하다.");
+  }
 }
 
 function exitShop() {
@@ -616,6 +722,11 @@ function exitShop() {
 function nearClub() {
   if (!state) return false;
   return state.world.clubs.some(c => nearClubRect(c));
+}
+
+function nearbyClub() {
+  if (!state) return null;
+  return state.world.clubs.find(c => nearClubRect(c)) || null;
 }
 
 function nearClubRect(c) {
@@ -788,6 +899,7 @@ function update(dt) {
   tickMusic();
   state.elapsed += dt;
   tickBuffs(dt);
+  tickBrisbaneEconomy(dt);
   if (state.elapsed >= state.nextCrewOfferAt && state.crew.length < MAX_CREW && !state.allyChoice) {
     offerAlly();
     state.nextCrewOfferAt += CREW_OFFER_INTERVAL;
@@ -867,11 +979,13 @@ function update(dt) {
     for (const note of state.notes) {
       const hit = Math.hypot((cop.x + 22) - note.x, (cop.y + 24) - note.y) < note.r;
       if (hit && !note.used) {
-        cop.hp -= 100 * state.attack / 50;
+        const baseDamage = note.power ? POWER_NOTE_DAMAGE : NOTE_DAMAGE;
+        const damage = baseDamage * state.attack / 50;
+        cop.hp -= damage;
         const applied = applyPoliceSpeedBump(1.01);
         note.used = true;
         shake = 6;
-        log(`경찰 타격. HP -${Math.round(100 * state.attack / 50)}, 추격 속도 x${applied.toFixed(2)}`);
+        log(`경찰 1명 타격. HP -${Math.round(damage)}, 추격 속도 x${applied.toFixed(2)}`);
         if (cop.hp <= 0) {
           cop.returning = true;
           addScore(250);
@@ -884,7 +998,8 @@ function update(dt) {
       const critical = Math.random() < 0.16;
       const blocked = selected === "roman" && critical && Math.random() < 0.1;
       if (!blocked) {
-        const raw = critical ? 42 : 24;
+        const routeRelief = state.route === "atlantic" ? 0.78 : 1;
+        const raw = (critical ? 42 : 24) * routeRelief;
         const skillGuard = selected === "jundai" && state.joseonPunkTimer > 0;
         const damage = Math.max(4, raw * (100 / (100 + state.defense))) * (skillGuard ? 0.35 : 1);
         state.hp -= damage;
@@ -925,6 +1040,22 @@ function update(dt) {
   renderShop();
 }
 
+function tickBrisbaneEconomy(dt) {
+  if (!state || LOCATIONS[state.locationIndex] !== "브리즈번" || state.clear) return;
+  updateScenePressure();
+  if (state.route === "klaxon") {
+    const income = (2.2 + state.followers * 0.55) * dt;
+    state.score += income;
+    state.totalScore += income;
+  } else if (state.route === "atlantic") {
+    const income = (5.5 + state.capitalists * 1.05) * dt;
+    const damage = state.capitalists * 0.22 * dt;
+    state.score += income;
+    state.totalScore += income;
+    if (state.capitalists > 0 && state.invincible <= 0) state.hp = Math.max(1, state.hp - damage);
+  }
+}
+
 function tickBuffs(dt) {
   if (!state) return;
   for (const active of state.activeBuffs) {
@@ -951,14 +1082,20 @@ function tickJoseonPunk(dt) {
   if (state.hp < guardedHp) {
     state.hp = Math.min(state.maxHp, state.hp + JOSEON_PUNK_HEAL_PER_SECOND * 1.15 * dt);
   }
-  for (const cop of state.police) {
-    if (cop.returning) continue;
+  const target = state.police
+    .filter(cop => !cop.returning)
+    .map(cop => ({
+      cop,
+      distance: Math.hypot((cop.x + 18) - centerX, (cop.y + 24) - centerY)
+    }))
+    .filter(hit => hit.distance <= JOSEON_PUNK_RADIUS)
+    .sort((a, b) => a.distance - b.distance)[0];
+  if (target) {
+    const cop = target.cop;
+    affected = 1;
     const copX = cop.x + 18;
     const copY = cop.y + 24;
-    const distance = Math.hypot(copX - centerX, copY - centerY);
-    if (distance > JOSEON_PUNK_RADIUS) continue;
-    affected++;
-    const force = Math.max(0.25, 1 - distance / JOSEON_PUNK_RADIUS);
+    const force = Math.max(0.25, 1 - target.distance / JOSEON_PUNK_RADIUS);
     const angle = Math.atan2(copY - centerY, copX - centerX);
     cop.x += Math.cos(angle) * JOSEON_PUNK_KNOCKBACK_PER_SECOND * force * dt;
     cop.y += Math.sin(angle) * JOSEON_PUNK_KNOCKBACK_PER_SECOND * force * dt;
@@ -968,7 +1105,7 @@ function tickJoseonPunk(dt) {
       cop.hp = 0;
       addScore(250);
       state.joseonPunkFlash = 0.18;
-      log("조선펑크 파동으로 경찰이 후퇴한다. +250점");
+      log("조선펑크 파동으로 경찰 1명이 후퇴한다. +250점");
     }
   }
   if (affected > 0) {
@@ -1007,8 +1144,10 @@ function tickPoliceRespawn(dt) {
   if (!state || state.inShop) return;
   state.policeSpawnTimer -= dt;
   if (state.policeSpawnTimer > 0) return;
-  state.policeSpawnTimer = Math.max(7, POLICE_RESPAWN_INTERVAL - state.locationIndex * 2 - Math.min(7, state.totalScore / 18000));
-  if (state.police.length >= POLICE_MAX + state.locationIndex) return;
+  const routeBoost = state.route === "klaxon" ? 5 : state.route === "atlantic" ? -2 : 0;
+  const routePace = state.route === "klaxon" ? 4 : 0;
+  state.policeSpawnTimer = Math.max(5, POLICE_RESPAWN_INTERVAL - state.locationIndex * 2 - Math.min(7, state.totalScore / 18000) - routePace);
+  if (state.police.length >= POLICE_MAX + state.locationIndex + routeBoost) return;
   state.police.push(spawnPoliceNearPlayer(520 + Math.random() * 260));
   log("새 경찰이 무전 받고 합류했다.");
 }
@@ -1034,6 +1173,7 @@ function checkLocationAdvance() {
   state.locationIndex = nextIndex;
   const hpRatio = state.hp / Math.max(1, state.maxHp);
   state.world = generateWorld();
+  markBrisbaneLabels();
   state.player.x = 180;
   state.player.y = 310;
   state.camera = { x: 0, y: 0 };
@@ -1048,6 +1188,31 @@ function checkLocationAdvance() {
   state.hp = Math.max(1, Math.min(state.maxHp, state.maxHp * hpRatio + 70));
   updateCamera();
   log(`${LOCATIONS[nextIndex]} 도착. 현지 경찰 무전망이 더 빨라졌다.`);
+  if (LOCATIONS[nextIndex] === "브리즈번") {
+    log("브리즈번 도착. 크락손 레코즈와 애틀랜틱 레코즈 중 어느 쪽 문을 열지 결정해야 한다.");
+  }
+}
+
+function checkClear() {
+  if (!state || state.clear || LOCATIONS[state.locationIndex] !== "브리즈번") return;
+  if (state.punk >= PUNK_TARGET) {
+    clearGame("immortal");
+  } else if (state.route === "atlantic" && state.fame >= ATLANTIC_FAME_TARGET) {
+    clearGame("symbol");
+  } else if (state.route === "klaxon" && state.fame >= FAME_TIGER_TARGET) {
+    clearGame("tiger");
+  }
+}
+
+function clearGame(titleId) {
+  const title = clearTitles[titleId];
+  state.clear = true;
+  state.clearTitle = titleId;
+  state.clearDescription = title.desc;
+  state.over = true;
+  state.invincible = Math.max(state.invincible, 4);
+  log(`클리어: ${title.name}`);
+  showGameOver(true);
 }
 
 function offerAlly() {
@@ -1070,15 +1235,21 @@ function chooseAlly(index) {
   state.allyChoice = null;
 }
 
-function showGameOver() {
+function showGameOver(isClear = false) {
   const finalScore = Math.floor(state.totalScore);
   pendingScore = {
     score: finalScore,
     character: state.character.name,
-    location: LOCATIONS[state.locationIndex]
+    location: LOCATIONS[state.locationIndex],
+    title: activeTitleName(),
+    titleDescription: state.clearDescription || ""
   };
-  ui.finalScore.textContent = `최종 점수 ${finalScore.toLocaleString("ko-KR")}`;
-  ui.scoreStatus.textContent = "이름을 남기면 전당에 기록됩니다.";
+  ui.finalScore.textContent = isClear
+    ? `클리어: ${activeTitleName()} · 돈 ${finalScore.toLocaleString("ko-KR")}`
+    : `최종 돈 ${finalScore.toLocaleString("ko-KR")}`;
+  ui.scoreStatus.textContent = isClear
+    ? state.clearDescription
+    : "이름을 남기면 전당에 기록됩니다.";
   ui.scoreForm.classList.remove("hidden");
   ui.overlay.classList.remove("hidden");
   ui.start.textContent = "다시 시작";
@@ -1107,7 +1278,7 @@ function renderScores(scores) {
       <span class="rank">${index + 1}</span>
       <span class="runner">${escapeHtml(entry.name)}</span>
       <strong>${Number(entry.score || 0).toLocaleString("ko-KR")}</strong>
-      <small>${escapeHtml(entry.character || "")} · ${escapeHtml(entry.location || "")}</small>
+      <small>${escapeHtml(entry.character || "")} · ${escapeHtml(entry.location || "")} · ${escapeHtml(entry.title || "칭호 없음")}</small>
     </li>
   `).join("");
 }
@@ -1244,11 +1415,18 @@ function drawClub(c) {
   ctx.strokeStyle = nearClubRect(c) ? "#20d6b5" : "#6f655a";
   ctx.lineWidth = 4;
   ctx.strokeRect(c.x, c.y, c.w, c.h);
+  if (c.type === "klaxon" || c.type === "atlantic") {
+    ctx.fillStyle = c.type === "klaxon" ? "#ff375f" : "#ffc857";
+    ctx.fillRect(c.x + 8, c.y + 8, c.w - 16, 24);
+    ctx.fillStyle = "#111";
+    ctx.font = "900 10px monospace";
+    ctx.fillText(c.name, c.x + 14, c.y + 25);
+  }
   ctx.fillStyle = "#20d6b5";
   ctx.font = "900 18px monospace";
-  ctx.fillText("PUNK", c.x + 28, c.y + 38);
+  ctx.fillText("PUNK", c.x + 28, c.y + (c.type ? 58 : 38));
   ctx.fillStyle = "#ff375f";
-  ctx.fillText("CLUB", c.x + 28, c.y + 62);
+  ctx.fillText("CLUB", c.x + 28, c.y + (c.type ? 82 : 62));
   ctx.fillStyle = "#3b3631";
   ctx.fillRect(c.x + 44, c.y + 88, 36, 57);
   ctx.fillStyle = "#ffc857";
@@ -1424,14 +1602,15 @@ function drawShopInterior() {
   ctx.font = "700 16px monospace";
   ctx.fillText("CHASE PAUSED", 410, 182);
 
+  const rowH = Math.max(27, Math.min(38, 248 / artifacts.length));
   artifacts.forEach((item, index) => {
-    const y = 222 + index * 40;
+    const y = 214 + index * rowH;
     const count = state.buyCounts[item.id] || 0;
     const cost = priceFor(item);
     ctx.fillStyle = state.score >= cost ? "#263f3a" : "#302b2b";
-    ctx.fillRect(270, y - 23, 420, 32);
+    ctx.fillRect(270, y - 20, 420, rowH - 5);
     ctx.fillStyle = "#f7f2e8";
-    ctx.font = "800 15px monospace";
+    ctx.font = "800 13px monospace";
     ctx.fillText(`${index + 1}. ${item.name}`, 286, y);
     ctx.textAlign = "right";
     ctx.fillText(`${cost} pts x${count}`, 672, y);
@@ -1450,9 +1629,9 @@ function shopItemRects() {
     return artifacts.map((item, index) => ({
       index,
       x: 270,
-      y: 222 + index * 40 - 23,
+      y: 214 + index * Math.max(27, Math.min(38, 248 / artifacts.length)) - 20,
       w: 420,
-      h: 32
+      h: Math.max(27, Math.min(38, 248 / artifacts.length)) - 5
     }));
   }
 
@@ -1461,7 +1640,7 @@ function shopItemRects() {
   const y = margin;
   const w = Math.max(1, canvas.width - margin * 2);
   const h = Math.max(1, canvas.height - margin * 2);
-  const itemCount = Math.min(artifacts.length, h < 150 ? 3 : 5);
+  const itemCount = Math.min(artifacts.length, h < 150 ? 4 : 8);
   const top = y + Math.max(43, Math.min(50, h * 0.22));
   const footerH = h < 160 ? 16 : 24;
   const rowH = Math.max(22, Math.min(31, (h - (top - y) - footerH) / itemCount));
@@ -1497,7 +1676,7 @@ function drawCompactShopInterior() {
   const y = margin;
   const w = Math.max(1, canvas.width - margin * 2);
   const h = Math.max(1, canvas.height - margin * 2);
-  const itemCount = Math.min(artifacts.length, h < 150 ? 3 : 5);
+  const itemCount = Math.min(artifacts.length, h < 150 ? 4 : 8);
 
   ctx.fillStyle = "rgba(10, 10, 10, 0.62)";
   ctx.fillRect(0, 0, canvas.width, canvas.height);
@@ -1587,10 +1766,18 @@ function syncUi() {
   document.body.classList.toggle("shop-mode", state.inShop);
   ui.score.textContent = Math.floor(state.score).toString();
   ui.hp.textContent = `${Math.ceil(state.hp)} / ${Math.ceil(state.maxHp)}`;
+  ui.fame.textContent = `${Math.floor(state.fame)}${state.route === "atlantic" ? " / 500" : state.route === "klaxon" ? " / 1000" : ""}`;
+  ui.punk.textContent = `${Math.floor(state.punk)} / 500`;
   ui.policeSpeed.textContent = state.inShop ? "PAUSED" : `${currentPoliceMultiplier().toFixed(2)}x`;
   ui.invincible.textContent = `${state.invincible.toFixed(1)}s`;
   ui.location.textContent = `${LOCATIONS[state.locationIndex]} ${Math.min(LOCATIONS.length, state.locationIndex + 1)}/${LOCATIONS.length}`;
-  ui.crew.textContent = state.crew.length ? state.crew.map(id => characters[id].name).join(", ") : "없음";
+  const sceneForces = [
+    state.crew.length ? state.crew.map(id => characters[id].name).join(", ") : "",
+    state.followers ? `추종자 ${state.followers}` : "",
+    state.capitalists ? `자본가 ${state.capitalists}` : ""
+  ].filter(Boolean);
+  ui.crew.textContent = sceneForces.length ? sceneForces.join(" / ") : "없음";
+  ui.titleStatus.textContent = activeTitleName();
   ui.buffs.textContent = state.activeBuffs.length
     ? state.activeBuffs.slice(0, 3).map(b => `${b.name} ${Math.ceil(b.remaining)}s`).join(" / ")
     : "없음";
