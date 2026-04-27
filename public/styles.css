@@ -615,6 +615,43 @@ footer {
     font-size: 15px;
   }
 
+  body.shop-mode .controls {
+    grid-template-columns: 1fr;
+  }
+
+  body.shop-mode .controls button:not(#strum) {
+    display: none;
+  }
+
+  body.shop-mode .shop {
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+  }
+
+  body.shop-mode .shop h2 {
+    margin: 0 0 6px;
+    font-size: 13px;
+    line-height: 1.15;
+    color: var(--club);
+  }
+
+  body.shop-mode .shop-items {
+    max-height: min(42svh, 310px);
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    padding-right: 4px;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  body.shop-mode .shop button {
+    min-height: 56px;
+  }
+
+  body.shop-mode #shopHint {
+    padding-top: 2px;
+  }
+
   .hall h2 {
     font-size: 15px;
   }
@@ -704,6 +741,10 @@ footer {
   .shop h2 {
     margin-bottom: 6px;
     font-size: 14px;
+  }
+
+  body.shop-mode .shop h2 {
+    font-size: 12px;
   }
 
   .shop button {

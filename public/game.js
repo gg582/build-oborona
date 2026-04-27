@@ -1444,12 +1444,12 @@ function drawShopInterior() {
 }
 
 function drawCompactShopInterior() {
-  const margin = 12;
+  const margin = Math.max(8, Math.min(12, Math.floor(canvas.width * 0.03)));
   const x = margin;
   const y = margin;
   const w = Math.max(1, canvas.width - margin * 2);
   const h = Math.max(1, canvas.height - margin * 2);
-  const itemCount = Math.min(artifacts.length, canvas.height < 190 ? 3 : 5);
+  const itemCount = Math.min(artifacts.length, h < 150 ? 3 : 5);
 
   ctx.fillStyle = "rgba(10, 10, 10, 0.62)";
   ctx.fillRect(0, 0, canvas.width, canvas.height);
@@ -1459,39 +1459,48 @@ function drawCompactShopInterior() {
   ctx.lineWidth = 3;
   ctx.strokeRect(x, y, w, h);
 
+  const headerY = y + Math.max(24, Math.min(31, h * 0.14));
   ctx.fillStyle = "#20d6b5";
-  ctx.font = "900 20px monospace";
-  ctx.fillText("SHOP", x + 14, y + 31);
+  ctx.font = `900 ${Math.max(14, Math.min(18, Math.floor(w / 18)))}px monospace`;
+  ctx.textAlign = "left";
+  ctx.fillText("샵", x + 12, headerY);
   ctx.fillStyle = "#b9b0a3";
-  ctx.font = "800 11px monospace";
-  ctx.fillText("PAUSED", x + w - 58, y + 29);
+  ctx.font = "800 10px monospace";
+  ctx.textAlign = "right";
+  ctx.fillText("CLUB PAUSED", x + w - 12, headerY - 1);
+  ctx.textAlign = "left";
 
-  const top = y + 50;
-  const rowH = Math.max(24, Math.min(32, (h - 72) / itemCount));
+  const top = y + Math.max(43, Math.min(50, h * 0.22));
+  const footerH = h < 160 ? 16 : 24;
+  const rowH = Math.max(22, Math.min(31, (h - (top - y) - footerH) / itemCount));
   for (let index = 0; index < itemCount; index++) {
     const item = artifacts[index];
     const rowY = top + index * rowH;
     const cost = priceFor(item);
     const count = state.buyCounts[item.id] || 0;
     ctx.fillStyle = state.score >= cost ? "#263f3a" : "#302b2b";
-    ctx.fillRect(x + 12, rowY - 16, w - 24, rowH - 5);
+    ctx.fillRect(x + 10, rowY - 16, w - 20, rowH - 4);
+    ctx.fillStyle = "#ffc857";
+    ctx.font = "900 12px monospace";
+    ctx.textAlign = "left";
+    ctx.fillText(`${index + 1}`, x + 18, rowY + 1);
     ctx.fillStyle = "#f7f2e8";
-    ctx.font = "800 12px monospace";
+    ctx.font = `800 ${Math.max(11, Math.min(13, Math.floor(w / 28)))}px monospace`;
     ctx.textAlign = "left";
     ctx.save();
     ctx.beginPath();
-    ctx.rect(x + 20, rowY - 16, Math.max(20, w - 112), rowH - 5);
+    ctx.rect(x + 42, rowY - 16, Math.max(20, w - 150), rowH - 4);
     ctx.clip();
-    ctx.fillText(`${index + 1}. ${item.name}`, x + 20, rowY);
+    ctx.fillText(item.name, x + 42, rowY + 1);
     ctx.restore();
     ctx.textAlign = "right";
-    ctx.fillText(`${cost} x${count}`, x + w - 20, rowY);
+    ctx.fillText(`${cost} x${count}`, x + w - 18, rowY + 1);
   }
 
   ctx.textAlign = "left";
   ctx.fillStyle = "#b9b0a3";
   ctx.font = "800 10px monospace";
-  ctx.fillText("1-5 BUY   SPACE/ESC EXIT", x + 14, y + h - 14);
+  ctx.fillText("1-5 BUY   ESC EXIT", x + 12, y + h - 10);
 }
 
 function drawAllyChoice() {
@@ -1527,6 +1536,7 @@ function drawAllyChoice() {
 
 function syncUi() {
   if (!state) return;
+  document.body.classList.toggle("shop-mode", state.inShop);
   ui.score.textContent = Math.floor(state.score).toString();
   ui.hp.textContent = `${Math.ceil(state.hp)} / ${Math.ceil(state.maxHp)}`;
   ui.policeSpeed.textContent = state.inShop ? "PAUSED" : `${currentPoliceMultiplier().toFixed(2)}x`;
