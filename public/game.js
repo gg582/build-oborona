@@ -87,6 +87,7 @@ const PUNK_TRACKS = {
   street: "https://www.gr-oborona.ru/mp3/1985-poganaja_molodezh/01.mp3",
   boss: "https://www.gr-oborona.ru/mp3/1993-sto_let_odinochestva/02.mp3"
 };
+const PUNK_TRACK_LOAD_TIMEOUT_MS = 10000;
 
 const clearTitles = {
   tiger: {
@@ -242,7 +243,7 @@ async function togglePunkAudio() {
     return;
   }
   ensureAudioReady();
-  log("펑크와 함께하기. 01.mp3를 전부 받을 때까지 기존 미디 리프를 유지한다.");
+  log("펑크와 함께하기. 음원이 재생 가능해지면 바로 전환한다.");
   loadPunkTrack("street");
   if (punk.streetReady) {
     if (isBossPhase()) checkBossTrack();
@@ -284,22 +285,19 @@ async function loadPunkTrack(kind) {
     syncPunkToggle();
   } catch {
     punk[loadingKey] = false;
+    if (kind === "boss" && punk.awaitingBoss) {
+      punk.awaitingBoss = false;
+      if (punk.enabled && punk.streetReady) playPunkTrack("street");
+    }
     log(kind === "boss"
-      ? "02.mp3 다운로드 확인 실패. 보스전에서도 01.mp3 또는 기존 미디를 유지한다."
-      : "01.mp3 다운로드 실패. 외부 음원 대신 기존 미디 리프를 유지한다.");
+      ? "02.mp3 재생 준비 실패. 보스전에서도 01.mp3 또는 기존 미디를 유지한다."
+      : "01.mp3 재생 준비 실패. 외부 음원 대신 기존 미디 리프를 유지한다.");
     syncPunkToggle();
   }
 }
 
 async function fetchPunkTrack(kind) {
-  try {
-    const response = await fetch(PUNK_TRACKS[kind], { mode: "cors", cache: "force-cache" });
-    if (!response.ok) throw new Error("track fetch failed");
-    const blob = await response.blob();
-    return configurePunkTrack(new Audio(URL.createObjectURL(blob)), kind);
-  } catch {
-    return loadDirectPunkTrack(kind);
-  }
+  return loadDirectPunkTrack(kind);
 }
 
 function configurePunkTrack(track, kind) {
@@ -313,13 +311,13 @@ function loadDirectPunkTrack(kind) {
   return new Promise((resolve, reject) => {
     const track = configurePunkTrack(new Audio(PUNK_TRACKS[kind]), kind);
     let done = false;
-    const timeout = window.setTimeout(() => finish(false), 120000);
+    const timeout = window.setTimeout(() => finish(false), PUNK_TRACK_LOAD_TIMEOUT_MS);
     const cleanup = () => {
       window.clearTimeout(timeout);
       track.removeEventListener("error", onError);
-      track.removeEventListener("progress", onProgress);
-      track.removeEventListener("canplaythrough", onProgress);
-      track.removeEventListener("loadedmetadata", onProgress);
+      track.removeEventListener("canplay", onPlayable);
+      track.removeEventListener("canplaythrough", onPlayable);
+      track.removeEventListener("loadeddata", onPlayable);
     };
     const finish = ok => {
       if (done) return;
@@ -329,20 +327,20 @@ function loadDirectPunkTrack(kind) {
       else reject(new Error("track preload failed"));
     };
     const onError = () => finish(false);
-    const onProgress = () => {
-      if (isTrackFullyBuffered(track)) finish(true);
+    const onPlayable = () => {
+      if (isTrackPlayable(track)) finish(true);
     };
     track.addEventListener("error", onError);
-    track.addEventListener("progress", onProgress);
-    track.addEventListener("canplaythrough", onProgress);
-    track.addEventListener("loadedmetadata", onProgress);
+    track.addEventListener("canplay", onPlayable);
+    track.addEventListener("canplaythrough", onPlayable);
+    track.addEventListener("loadeddata", onPlayable);
     track.load();
+    if (isTrackPlayable(track)) finish(true);
   });
 }
 
-function isTrackFullyBuffered(track) {
-  if (!Number.isFinite(track.duration) || track.duration <= 0 || track.buffered.length === 0) return false;
-  return track.buffered.end(track.buffered.length - 1) >= track.duration - 0.25;
+function isTrackPlayable(track) {
+  return track.readyState >= HTMLMediaElement.HAVE_FUTURE_DATA;
 }
 
 function playPunkTrack(kind) {
@@ -390,11 +388,9 @@ function checkBossTrack() {
     log("보스전 음원 확인: 02.mp3 준비 완료, 전환한다.");
   } else {
     punk.awaitingBoss = true;
-    if (punk.streetAudio && !punk.streetAudio.paused) punk.streetAudio.pause();
     if (punk.bossAudio && !punk.bossAudio.paused) punk.bossAudio.pause();
-    punk.current = null;
     loadPunkTrack("boss");
-    log("보스전 음원 확인: 02.mp3가 아직 준비되지 않아 완전 다운로드를 기다린다.");
+    log("보스전 음원 확인: 02.mp3를 준비하는 동안 현재 음악을 유지한다.");
   }
   syncPunkToggle();
 }
