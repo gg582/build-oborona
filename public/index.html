@@ -62,6 +62,11 @@
               <strong>준다이</strong>
               <small>체력 x2, 공격 x1.5, 방어 x0.8<br>조선펑크: 10초간 가장 가까운 경찰 1명 압박 + 회복</small>
             </button>
+            <button class="character" data-character="kuznetsov">
+              <span class="sprite kuznetsov"></span>
+              <strong>쿠즈네초프</strong>
+              <small>공격 x1.2, 방어 x3, 체력 x0.7<br>싸이키델리아: 3초간 경찰 타격 100% 무효 + PINK CIGAR</small>
+            </button>
           </div>
         </div>
       </section>
@@ -86,10 +91,11 @@
           <button id="rock" disabled>락네버다이 <b>R</b></button>
           <button id="skill">캐릭터 스킬 <b>E</b></button>
           <button id="concert" disabled>게릴라 락 콘서트 <b>G</b></button>
+          <button id="punkToggle" type="button" aria-pressed="false">펑크와 함께하기 <b>OFF</b></button>
         </div>
 
         <div class="shop">
-          <h2>Punk Club 내부 샵</h2>
+          <h2 id="shopTitle">Punk Club 내부 샵</h2>
           <div id="shopItems" class="shop-items"></div>
           <p id="shopHint">클럽 근처에 도착하면 아티팩트를 살 수 있습니다.</p>
         </div>

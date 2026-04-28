@@ -232,7 +232,7 @@ button:disabled {
 
 .select {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(5, minmax(0, 1fr));
   gap: 10px;
 }
 
@@ -277,6 +277,7 @@ button:disabled {
 .roman { background: linear-gradient(#e6c38e 0 22%, #333 22% 42%, #3159aa 42% 72%, #1e2536 72%); }
 .didiramon { background: linear-gradient(#c9a06a 0 22%, #fbf3d3 22% 42%, #2cb673 42% 72%, #252525 72%); }
 .jundai { background: linear-gradient(#e8b28c 0 22%, #111 22% 37%, #d843bf 37% 72%, #202020 72%); }
+.kuznetsov { background: linear-gradient(#d8b37c 0 22%, #101010 22% 38%, #f08ab7 38% 72%, #242424 72%); }
 
 .panel {
   background: var(--panel);
@@ -364,6 +365,7 @@ button:disabled {
 .controls button:nth-child(3) { background: #157864; }
 .controls button:nth-child(4) { background: #475a9f; }
 .controls button:nth-child(5) { background: #6e243f; }
+.controls button:nth-child(6) { background: #8f426b; }
 
 .controls b {
   min-width: 40px;

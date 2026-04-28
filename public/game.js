@@ -15,10 +15,12 @@ const ui = {
   rock: document.getElementById("rock"),
   skill: document.getElementById("skill"),
   concert: document.getElementById("concert"),
+  punkToggle: document.getElementById("punkToggle"),
   location: document.getElementById("location"),
   crew: document.getElementById("crew"),
   titleStatus: document.getElementById("titleStatus"),
   buffs: document.getElementById("buffs"),
+  shopTitle: document.getElementById("shopTitle"),
   shopItems: document.getElementById("shopItems"),
   shopHint: document.getElementById("shopHint"),
   log: document.getElementById("log"),
@@ -61,6 +63,7 @@ const JOSEON_PUNK_DAMAGE_PER_SECOND = 92;
 const JOSEON_PUNK_HEAL_PER_SECOND = 28;
 const JOSEON_PUNK_KNOCKBACK_PER_SECOND = 185;
 const JOSEON_PUNK_MIN_HP_RATIO = 0.18;
+const PSYCHEDELIA_DURATION = 3;
 const RIFF_BPM = 160;
 const RIFF_STEPS_PER_BAR = 8;
 const RIFF_STEP_SECONDS = 60 / RIFF_BPM / 2;
@@ -79,6 +82,10 @@ const NOTE_FREQUENCIES = {
   "G#4": 415.3,
   "A4": 440,
   "B4": 493.88
+};
+const PUNK_TRACKS = {
+  street: "https://www.gr-oborona.ru/mp3/1985-poganaja_molodezh/01.mp3",
+  boss: "https://www.gr-oborona.ru/mp3/1993-sto_let_odinochestva/02.mp3"
 };
 
 const clearTitles = {
@@ -132,6 +139,15 @@ const characters = {
     capital: 1,
     powerScore: 1.1,
     color: "#d843bf"
+  },
+  kuznetsov: {
+    name: "쿠즈네초프",
+    attack: 1.2,
+    defense: 3,
+    health: 0.7,
+    capital: 1,
+    powerScore: 1.15,
+    color: "#f08ab7"
   }
 };
 
@@ -158,6 +174,7 @@ let lastTime = performance.now();
 let shake = 0;
 let messages = [];
 let audio = null;
+let punkAudio = null;
 const touchInput = {
   active: false,
   id: null,
@@ -196,6 +213,187 @@ function ensureAudio() {
     ready: false
   };
   return audio;
+}
+
+function ensurePunkAudio() {
+  if (punkAudio) return punkAudio;
+  punkAudio = {
+    enabled: false,
+    loadingStreet: false,
+    loadingBoss: false,
+    streetReady: false,
+    bossReady: false,
+    streetAudio: null,
+    bossAudio: null,
+    current: null
+  };
+  return punkAudio;
+}
+
+async function togglePunkAudio() {
+  const punk = ensurePunkAudio();
+  punk.enabled = !punk.enabled;
+  syncPunkToggle();
+  if (!punk.enabled) {
+    stopPunkTracks();
+    log("펑크 음원 모드 해제. 기존 미디 리프를 다시 사용한다.");
+    return;
+  }
+  ensureAudioReady();
+  log("펑크와 함께하기. 01.mp3를 전부 받을 때까지 기존 미디 리프를 유지한다.");
+  loadPunkTrack("street");
+  if (punk.streetReady) playPunkTrack(punk.bossReady && isBossPhase() ? "boss" : "street");
+}
+
+function ensureAudioReady() {
+  const audioState = ensureAudio();
+  if (audioState && audioState.ctx.state === "suspended") audioState.ctx.resume();
+}
+
+async function loadPunkTrack(kind) {
+  const punk = ensurePunkAudio();
+  const loadingKey = kind === "boss" ? "loadingBoss" : "loadingStreet";
+  const readyKey = kind === "boss" ? "bossReady" : "streetReady";
+  const audioKey = kind === "boss" ? "bossAudio" : "streetAudio";
+  if (punk[readyKey] || punk[loadingKey]) return;
+  punk[loadingKey] = true;
+  try {
+    const track = await fetchPunkTrack(kind);
+    punk[audioKey] = track;
+    punk[readyKey] = true;
+    punk[loadingKey] = false;
+    if (kind === "street") {
+      log("01.mp3 다운로드 완료. 기존 미디를 끄고 음원을 재생한다.");
+      loadPunkTrack("boss");
+      if (punk.enabled) playPunkTrack(isBossPhase() && punk.bossReady ? "boss" : "street");
+    } else {
+      log("02.mp3 다운로드 완료. 보스전 진입 시 전환 준비 완료.");
+      if (punk.enabled && isBossPhase()) playPunkTrack("boss");
+    }
+    syncPunkToggle();
+  } catch {
+    punk[loadingKey] = false;
+    log(kind === "boss"
+      ? "02.mp3 다운로드 확인 실패. 보스전에서도 01.mp3 또는 기존 미디를 유지한다."
+      : "01.mp3 다운로드 실패. 외부 음원 대신 기존 미디 리프를 유지한다.");
+    syncPunkToggle();
+  }
+}
+
+async function fetchPunkTrack(kind) {
+  try {
+    const response = await fetch(PUNK_TRACKS[kind], { mode: "cors", cache: "force-cache" });
+    if (!response.ok) throw new Error("track fetch failed");
+    const blob = await response.blob();
+    return configurePunkTrack(new Audio(URL.createObjectURL(blob)), kind);
+  } catch {
+    return loadDirectPunkTrack(kind);
+  }
+}
+
+function configurePunkTrack(track, kind) {
+  track.loop = true;
+  track.preload = "auto";
+  track.volume = kind === "boss" ? 0.62 : 0.58;
+  return track;
+}
+
+function loadDirectPunkTrack(kind) {
+  return new Promise((resolve, reject) => {
+    const track = configurePunkTrack(new Audio(PUNK_TRACKS[kind]), kind);
+    let done = false;
+    const timeout = window.setTimeout(() => finish(false), 120000);
+    const cleanup = () => {
+      window.clearTimeout(timeout);
+      track.removeEventListener("error", onError);
+      track.removeEventListener("progress", onProgress);
+      track.removeEventListener("canplaythrough", onProgress);
+      track.removeEventListener("loadedmetadata", onProgress);
+    };
+    const finish = ok => {
+      if (done) return;
+      done = true;
+      cleanup();
+      if (ok) resolve(track);
+      else reject(new Error("track preload failed"));
+    };
+    const onError = () => finish(false);
+    const onProgress = () => {
+      if (isTrackFullyBuffered(track)) finish(true);
+    };
+    track.addEventListener("error", onError);
+    track.addEventListener("progress", onProgress);
+    track.addEventListener("canplaythrough", onProgress);
+    track.addEventListener("loadedmetadata", onProgress);
+    track.load();
+  });
+}
+
+function isTrackFullyBuffered(track) {
+  if (!Number.isFinite(track.duration) || track.duration <= 0 || track.buffered.length === 0) return false;
+  return track.buffered.end(track.buffered.length - 1) >= track.duration - 0.25;
+}
+
+function playPunkTrack(kind) {
+  const punk = ensurePunkAudio();
+  if (!punk.enabled) return;
+  const target = kind === "boss" ? punk.bossAudio : punk.streetAudio;
+  if (!target) return;
+  const other = kind === "boss" ? punk.streetAudio : punk.bossAudio;
+  if (other && !other.paused) other.pause();
+  if (other) other.currentTime = 0;
+  punk.current = kind;
+  target.play().catch(() => {
+    punk.current = null;
+    log("브라우저가 음원 자동 재생을 막았다. 펑크와 함께하기를 다시 누르면 재생을 시도한다.");
+    syncPunkToggle();
+  });
+  syncPunkToggle();
+}
+
+function stopPunkTracks() {
+  const punk = ensurePunkAudio();
+  for (const track of [punk.streetAudio, punk.bossAudio]) {
+    if (!track) continue;
+    track.pause();
+    track.currentTime = 0;
+  }
+  punk.current = null;
+}
+
+function shouldUseExternalMusic() {
+  const punk = ensurePunkAudio();
+  return punk.enabled && punk.streetReady && punk.current;
+}
+
+function isBossPhase() {
+  return !!state && LOCATIONS[state.locationIndex] === "브리즈번";
+}
+
+function checkBossTrack() {
+  const punk = ensurePunkAudio();
+  if (!punk.enabled || !isBossPhase()) return;
+  if (punk.bossReady) {
+    playPunkTrack("boss");
+    log("보스전 음원 확인: 02.mp3 준비 완료, 전환한다.");
+  } else {
+    loadPunkTrack("boss");
+    log("보스전 음원 확인: 02.mp3가 아직 준비되지 않아 현재 음원을 유지한다.");
+  }
+}
+
+function syncPunkToggle() {
+  if (!ui.punkToggle) return;
+  const punk = ensurePunkAudio();
+  let label = "OFF";
+  if (punk.enabled) {
+    if (punk.current === "boss") label = "02";
+    else if (punk.current === "street") label = "01";
+    else if (punk.loadingStreet) label = "LOAD";
+    else label = "ON";
+  }
+  ui.punkToggle.setAttribute("aria-pressed", punk.enabled ? "true" : "false");
+  ui.punkToggle.innerHTML = `펑크와 함께하기 <b>${label}</b>`;
 }
 
 function baseState() {
@@ -237,6 +435,8 @@ function baseState() {
     skillCooldown: 0,
     joseonPunkTimer: 0,
     joseonPunkFlash: 0,
+    psychedeliaTimer: 0,
+    clubBrand: "PUNK CLUB",
     discount: 1,
     activeBuffs: [],
     buyCounts: {},
@@ -570,6 +770,8 @@ function startGame() {
   log("뉴욕에서 시작한다. 런던, 옴스크, 서울 다음 목적지는 브리즈번이다.");
   log("레코즈 루트 활동은 브리즈번 도착 후 해당 거점 문을 열어야 등장한다.");
   log("도시는 끝없이 열린다. 끝에 닿으면 새 구역과 Punk Club 거점이 확장된다.");
+  const punk = ensurePunkAudio();
+  if (punk.enabled && punk.streetReady) playPunkTrack("street");
   renderShop();
 }
 
@@ -630,6 +832,14 @@ function useSkill() {
     state.notes.push(makeNote(state.player.x + 15, state.player.y + 18, JOSEON_PUNK_RADIUS, 0.45, true));
     state.sparks.push({ x: state.player.x + 34, y: state.player.y + 14, life: 0.42, power: true });
     log("준다이: 조선펑크 발동. 10초간 가까운 경찰 1명을 밀어내고 체력을 회복한다.");
+  } else if (selected === "kuznetsov") {
+    state.psychedeliaTimer = PSYCHEDELIA_DURATION;
+    state.invincible = Math.max(state.invincible, PSYCHEDELIA_DURATION);
+    state.clubBrand = "PINK CIGAR";
+    state.skillCooldown = 24;
+    state.notes.push(makeNote(state.player.x + 15, state.player.y + 18, 132, 0.45, true));
+    state.sparks.push({ x: state.player.x + 36, y: state.player.y + 12, life: 0.5, power: true });
+    log("쿠즈네초프: 싸이키델리아. 3초간 경찰 타격을 완전 무효화하고 PUNK CLUB이 PINK CIGAR로 바뀐다.");
   }
 }
 
@@ -801,6 +1011,7 @@ ui.power.addEventListener("click", () => strum(true));
 ui.rock.addEventListener("click", () => rockNeverDie(0));
 ui.skill.addEventListener("click", useSkill);
 ui.concert.addEventListener("click", guerrillaConcert);
+if (ui.punkToggle) ui.punkToggle.addEventListener("click", togglePunkAudio);
 ui.shopItems.addEventListener("click", event => {
   const button = event.target.closest("[data-buy]");
   if (button) buy(button.dataset.buy);
@@ -977,6 +1188,7 @@ function update(dt) {
   state.concertPoliceBoost = state.concertTimer > 0 ? 1.08 : 1;
   state.joseonPunkTimer = Math.max(0, state.joseonPunkTimer - dt);
   state.joseonPunkFlash = Math.max(0, state.joseonPunkFlash - dt);
+  state.psychedeliaTimer = Math.max(0, state.psychedeliaTimer - dt);
   state.notes = state.notes.filter(n => (n.life -= dt) > 0);
   state.sparks = state.sparks.filter(s => (s.life -= dt) > 0);
   state.shopFlash = Math.max(0, state.shopFlash - dt);
@@ -1027,12 +1239,15 @@ function update(dt) {
         const routeRelief = state.route === "atlantic" ? 0.78 : 1;
         const raw = (critical ? 42 : 24) * routeRelief * POLICE_ATTACK_MULTIPLIER;
         const skillGuard = selected === "jundai" && state.joseonPunkTimer > 0;
-        const damage = Math.max(4, raw * (100 / (100 + state.defense))) * (skillGuard ? 0.35 : 1);
+        const psychedeliaGuard = selected === "kuznetsov" && state.psychedeliaTimer > 0;
+        const damage = psychedeliaGuard ? 0 : Math.max(4, raw * (100 / (100 + state.defense))) * (skillGuard ? 0.35 : 1);
         state.hp -= damage;
         if (skillGuard && state.hp <= 0) state.hp = 1;
-        state.invincible = skillGuard ? 0.7 : 0.42;
+        state.invincible = psychedeliaGuard ? 0.2 : skillGuard ? 0.7 : 0.42;
         shake = 10;
-        log(skillGuard
+        log(psychedeliaGuard
+          ? "싸이키델리아가 경찰의 타격을 100% 무효화했다."
+          : skillGuard
           ? `조선펑크가 충돌 피해를 버텼다. 체력 -${Math.round(damage)}`
           : critical ? `치명타! 체력 -${Math.round(damage)}` : `붙잡혔다. 체력 -${Math.round(damage)}`);
       } else {
@@ -1216,6 +1431,7 @@ function checkLocationAdvance() {
   log(`${LOCATIONS[nextIndex]} 도착. 현지 경찰 무전망이 더 빨라졌다.`);
   if (LOCATIONS[nextIndex] === "브리즈번") {
     log("브리즈번 도착. 크락손 레코즈와 애틀랜틱 레코즈 중 어느 쪽 문을 열지 결정해야 한다.");
+    checkBossTrack();
   }
 }
 
@@ -1448,16 +1664,58 @@ function drawClub(c) {
     ctx.font = "900 10px monospace";
     ctx.fillText(c.name, c.x + 14, c.y + 25);
   }
+  const signY = c.y + (c.type ? 42 : 22);
+  ctx.fillStyle = "#101010";
+  ctx.fillRect(c.x + 14, signY, c.w - 28, 48);
+  ctx.strokeStyle = "#20d6b5";
+  ctx.lineWidth = 2;
+  ctx.strokeRect(c.x + 14, signY, c.w - 28, 48);
+  drawElectricGuitar(c.x + 27, signY + 12, 0.72);
+  drawCitySymbol(c.x + c.w - 44, signY + 11, 0.78);
+  const brand = state && state.clubBrand === "PINK CIGAR" ? ["PINK", "CIGAR"] : ["PUNK", "CLUB"];
   ctx.fillStyle = "#20d6b5";
-  ctx.font = "900 18px monospace";
-  ctx.fillText("PUNK", c.x + 28, c.y + (c.type ? 58 : 38));
-  ctx.fillStyle = "#ff375f";
-  ctx.fillText("CLUB", c.x + 28, c.y + (c.type ? 82 : 62));
+  ctx.font = "900 16px monospace";
+  ctx.fillText(brand[0], c.x + 55, signY + 19);
+  ctx.fillStyle = "#ff8abd";
+  ctx.fillText(brand[1], c.x + 55, signY + 39);
   ctx.fillStyle = "#3b3631";
   ctx.fillRect(c.x + 44, c.y + 88, 36, 57);
   ctx.fillStyle = "#ffc857";
   ctx.font = "700 12px monospace";
   ctx.fillText("SPACE", c.x + 49, c.y + 120);
+}
+
+function drawElectricGuitar(x, y, scale = 1) {
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.scale(scale, scale);
+  ctx.fillStyle = "#ffc857";
+  ctx.fillRect(20, 5, 38, 5);
+  ctx.fillRect(53, 1, 8, 13);
+  ctx.fillStyle = "#ff375f";
+  ctx.fillRect(4, 16, 19, 17);
+  ctx.fillRect(15, 10, 16, 25);
+  ctx.fillStyle = "#f7f2e8";
+  ctx.fillRect(23, 20, 28, 2);
+  ctx.fillRect(23, 26, 25, 2);
+  ctx.restore();
+}
+
+function drawCitySymbol(x, y, scale = 1) {
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.scale(scale, scale);
+  ctx.fillStyle = "#d8d0c4";
+  ctx.fillRect(2, 18, 9, 22);
+  ctx.fillRect(15, 8, 10, 32);
+  ctx.fillRect(29, 14, 12, 26);
+  ctx.fillStyle = "#20d6b5";
+  for (let yy = 13; yy < 36; yy += 8) {
+    ctx.fillRect(18, yy, 4, 4);
+    if (yy > 18) ctx.fillRect(5, yy, 3, 4);
+    ctx.fillRect(33, yy, 4, 4);
+  }
+  ctx.restore();
 }
 
 function drawPlayer() {
@@ -1624,7 +1882,7 @@ function drawShopInterior() {
   ctx.strokeRect(210, 96, 540, 342);
   ctx.fillStyle = "#20d6b5";
   ctx.font = "900 30px monospace";
-  ctx.fillText("PUNK CLUB SHOP", 292, 150);
+  ctx.fillText(`${state.clubBrand} SHOP`, 292, 150);
   ctx.fillStyle = "#d8d0c4";
   ctx.font = "700 16px monospace";
   ctx.fillText("CHASE PAUSED", 410, 182);
@@ -1806,6 +2064,7 @@ function syncUi() {
   ].filter(Boolean);
   ui.crew.textContent = sceneForces.length ? sceneForces.join(" / ") : "없음";
   ui.titleStatus.textContent = activeTitleName();
+  if (ui.shopTitle) ui.shopTitle.textContent = `${state.clubBrand} 내부 샵`;
   ui.buffs.textContent = state.activeBuffs.length
     ? state.activeBuffs.slice(0, 3).map(b => `${b.name} ${Math.ceil(b.remaining)}s`).join(" / ")
     : "없음";
@@ -1814,7 +2073,9 @@ function syncUi() {
   ui.power.disabled = state.inShop || state.over;
   ui.rock.disabled = state.inShop || state.score < 1000 || state.over;
   ui.skill.disabled = state.inShop || state.over;
-  ui.skill.innerHTML = selected === "jundai" && state.joseonPunkTimer > 0
+  ui.skill.innerHTML = selected === "kuznetsov" && state.psychedeliaTimer > 0
+      ? `싸이키델리아 ${Math.ceil(state.psychedeliaTimer)}s <b>E</b>`
+      : selected === "jundai" && state.joseonPunkTimer > 0
       ? `조선펑크 ${Math.ceil(state.joseonPunkTimer)}s <b>E</b>`
       : state.skillCooldown > 0
         ? `캐릭터 스킬 ${Math.ceil(state.skillCooldown)}s <b>E</b>`
@@ -1823,6 +2084,7 @@ function syncUi() {
     ? `게릴라 콘서트 ${Math.ceil(state.concertTimer)}s <b>7%</b>`
     : "게릴라 락 콘서트 <b>G</b>";
   ui.concert.disabled = state.inShop || state.over || state.score < 10000 || state.concertTimer > 0;
+  syncPunkToggle();
 }
 
 function playGuitar(power) {
@@ -1861,6 +2123,7 @@ function playGuitar(power) {
 function tickMusic() {
   const audioState = ensureAudio();
   if (!audioState || audioState.ctx.state !== "running") return;
+  if (shouldUseExternalMusic()) return;
   const now = audioState.ctx.currentTime;
   updateConcertMusicVolume(audioState, now);
   if (!audioState.nextRiffStep || audioState.nextRiffStep < now) audioState.nextRiffStep = now;
