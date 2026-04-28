@@ -47,6 +47,7 @@ const MAX_PARTY_SIZE = 3;
 const MAX_CREW = MAX_PARTY_SIZE - 1;
 const POLICE_RESPAWN_INTERVAL = 18;
 const POLICE_MAX = 9;
+const POLICE_ATTACK_MULTIPLIER = 2;
 const NOTE_DAMAGE = 58;
 const POWER_NOTE_DAMAGE = 82;
 const FAME_TIGER_TARGET = 1000;
@@ -1024,7 +1025,7 @@ function update(dt) {
       const blocked = selected === "roman" && critical && Math.random() < 0.1;
       if (!blocked) {
         const routeRelief = state.route === "atlantic" ? 0.78 : 1;
-        const raw = (critical ? 42 : 24) * routeRelief;
+        const raw = (critical ? 42 : 24) * routeRelief * POLICE_ATTACK_MULTIPLIER;
         const skillGuard = selected === "jundai" && state.joseonPunkTimer > 0;
         const damage = Math.max(4, raw * (100 / (100 + state.defense))) * (skillGuard ? 0.35 : 1);
         state.hp -= damage;
