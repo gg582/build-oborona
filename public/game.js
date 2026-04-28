@@ -144,6 +144,11 @@ const artifacts = [
   { id: "citizen", name: "모범 시민인 척 해서 명성을 쌓기", price: 1200, desc: "명성 +120. 애틀랜틱 루트 강화", instant: { fame: 120, civic: 1 } },
   { id: "poster", name: "사회 고발성 대자보를 붙여서 펑크력을 쌓기", price: 950, desc: "펑크력 +100. 불멸의 펑크족 루트", instant: { punk: 100 } }
 ];
+const basicArtifactIds = new Set(["paint", "jacket", "bike", "beer", "vodka"]);
+const routeArtifactIds = {
+  klaxon: new Set(["underground"]),
+  atlantic: new Set(["citizen", "poster"])
+};
 
 let selected = "egor";
 let state = null;
@@ -561,8 +566,8 @@ function startGame() {
   ui.scoreForm.querySelector("button").disabled = false;
   ui.overlay.classList.add("hidden");
   log(`${state.character.name} 출발. 경찰서 앞 골목을 찢어라.`);
-  log("뉴욕에서 시작한다. 서울 다음 목적지는 브리즈번이다.");
-  log("브리즈번의 레코즈 거점에서 명성 500/1000 또는 펑크력 500 클리어를 노려라.");
+  log("뉴욕에서 시작한다. 런던, 옴스크, 서울 다음 목적지는 브리즈번이다.");
+  log("레코즈 루트 활동은 브리즈번 도착 후 해당 거점 문을 열어야 등장한다.");
   log("도시는 끝없이 열린다. 끝에 닿으면 새 구역과 Punk Club 거점이 확장된다.");
   renderShop();
 }
@@ -643,8 +648,8 @@ function buy(id) {
   if (!state || state.over || !state.inShop) return;
   const item = artifacts.find(a => a.id === id);
   if (!item) return;
-  if ((item.id === "underground" || item.id === "citizen" || item.id === "poster") && LOCATIONS[state.locationIndex] !== "브리즈번") {
-    log("이 활동은 브리즈번 레코즈 거리에서만 제대로 먹힌다.");
+  if (!availableArtifacts().some(available => available.id === item.id)) {
+    log(routeLockedMessage(item.id));
     return;
   }
   const cost = priceFor(item);
@@ -674,7 +679,7 @@ function makeNote(x, y, r, life, power = false) {
 
 function buySlot(index) {
   if (!state || !state.inShop) return;
-  const item = artifacts[index];
+  const item = availableArtifacts()[index];
   if (item) buy(item.id);
 }
 
@@ -742,7 +747,8 @@ function nearClubRect(c) {
 
 function renderShop() {
   if (!state) return;
-  ui.shopItems.innerHTML = artifacts.map((item, index) => {
+  const items = availableArtifacts();
+  ui.shopItems.innerHTML = items.map((item, index) => {
     const cost = priceFor(item);
     const count = state.buyCounts[item.id] || 0;
     const disabled = !state.inShop;
@@ -752,6 +758,25 @@ function renderShop() {
       <b>${count ? `x${count} · ${cost}점` : `무제한 · ${cost}점`}</b>
     </button>`;
   }).join("");
+}
+
+function availableArtifacts() {
+  if (!state) return artifacts.filter(item => basicArtifactIds.has(item.id));
+  return artifacts.filter(item => {
+    if (basicArtifactIds.has(item.id)) return true;
+    if (LOCATIONS[state.locationIndex] !== "브리즈번") return false;
+    const routeItems = routeArtifactIds[state.route];
+    return routeItems ? routeItems.has(item.id) : false;
+  });
+}
+
+function routeLockedMessage(id) {
+  if (LOCATIONS[state.locationIndex] !== "브리즈번") {
+    return "브리즈번 레코즈 거점에 도착해야 열리는 활동이다.";
+  }
+  if (id === "underground") return "지하 음반 유통은 크락손 레코즈 루트에서 열린다.";
+  if (id === "citizen" || id === "poster") return "이 활동은 애틀랜틱 레코즈 루트에서 열린다.";
+  return "아직 열리지 않은 활동이다.";
 }
 
 const keys = new Set();
@@ -1581,9 +1606,10 @@ function drawMinimap() {
 
 function drawShopInterior() {
   ctx.save();
+  const items = availableArtifacts();
   const compact = canvas.width < 620 || canvas.height < 360;
   if (compact) {
-    drawCompactShopInterior();
+    drawCompactShopInterior(items);
     ctx.restore();
     return;
   }
@@ -1602,8 +1628,8 @@ function drawShopInterior() {
   ctx.font = "700 16px monospace";
   ctx.fillText("CHASE PAUSED", 410, 182);
 
-  const rowH = Math.max(27, Math.min(38, 248 / artifacts.length));
-  artifacts.forEach((item, index) => {
+  const rowH = Math.max(27, Math.min(38, 248 / items.length));
+  items.forEach((item, index) => {
     const y = 214 + index * rowH;
     const count = state.buyCounts[item.id] || 0;
     const cost = priceFor(item);
@@ -1624,14 +1650,15 @@ function drawShopInterior() {
 }
 
 function shopItemRects() {
+  const items = availableArtifacts();
   const compact = canvas.width < 620 || canvas.height < 360;
   if (!compact) {
-    return artifacts.map((item, index) => ({
+    return items.map((item, index) => ({
       index,
       x: 270,
-      y: 214 + index * Math.max(27, Math.min(38, 248 / artifacts.length)) - 20,
+      y: 214 + index * Math.max(27, Math.min(38, 248 / items.length)) - 20,
       w: 420,
-      h: Math.max(27, Math.min(38, 248 / artifacts.length)) - 5
+      h: Math.max(27, Math.min(38, 248 / items.length)) - 5
     }));
   }
 
@@ -1640,12 +1667,12 @@ function shopItemRects() {
   const y = margin;
   const w = Math.max(1, canvas.width - margin * 2);
   const h = Math.max(1, canvas.height - margin * 2);
-  const itemCount = Math.min(artifacts.length, h < 150 ? 4 : 8);
+  const itemCount = Math.min(items.length, h < 150 ? 4 : 8);
   const top = y + Math.max(43, Math.min(50, h * 0.22));
   const footerH = h < 160 ? 16 : 24;
   const rowH = Math.max(22, Math.min(31, (h - (top - y) - footerH) / itemCount));
 
-  return artifacts.slice(0, itemCount).map((item, index) => ({
+  return items.slice(0, itemCount).map((item, index) => ({
     index,
     x: x + 10,
     y: top + index * rowH - 16,
@@ -1670,13 +1697,13 @@ function shopItemIndexAt(clientX, clientY) {
   return hit ? hit.index : -1;
 }
 
-function drawCompactShopInterior() {
+function drawCompactShopInterior(items = availableArtifacts()) {
   const margin = Math.max(8, Math.min(12, Math.floor(canvas.width * 0.03)));
   const x = margin;
   const y = margin;
   const w = Math.max(1, canvas.width - margin * 2);
   const h = Math.max(1, canvas.height - margin * 2);
-  const itemCount = Math.min(artifacts.length, h < 150 ? 4 : 8);
+  const itemCount = Math.min(items.length, h < 150 ? 4 : 8);
 
   ctx.fillStyle = "rgba(10, 10, 10, 0.62)";
   ctx.fillRect(0, 0, canvas.width, canvas.height);
@@ -1701,7 +1728,7 @@ function drawCompactShopInterior() {
   const footerH = h < 160 ? 16 : 24;
   const rowH = Math.max(22, Math.min(31, (h - (top - y) - footerH) / itemCount));
   for (let index = 0; index < itemCount; index++) {
-    const item = artifacts[index];
+    const item = items[index];
     const rowY = top + index * rowH;
     const cost = priceFor(item);
     const count = state.buyCounts[item.id] || 0;

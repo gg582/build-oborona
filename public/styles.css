@@ -534,23 +534,24 @@ footer {
 
 @media (max-width: 900px) {
   html {
-    height: auto;
-    min-height: 100%;
+    height: 100%;
     overflow-x: clip;
-    overflow-y: auto;
+    overflow-y: hidden;
   }
 
   body {
-    min-height: 100vh;
-    min-height: 100dvh;
-    height: auto;
+    min-height: 100%;
+    height: 100vh;
+    height: 100dvh;
     overflow-x: clip;
-    overflow-y: auto;
+    overflow-y: hidden;
     background: #171717;
+    grid-template-rows: minmax(0, 1fr) auto;
   }
 
   .shell {
     width: 100%;
+    height: 100%;
     min-height: 0;
     margin: 0;
     padding: 0;
@@ -564,9 +565,9 @@ footer {
     width: 100%;
     aspect-ratio: 16 / 9;
     height: auto;
-    min-height: 220px;
-    max-height: min(58svh, 360px);
-    flex: 0 0 auto;
+    min-height: 190px;
+    max-height: none;
+    flex: 1 1 auto;
   }
 
   canvas {
@@ -596,10 +597,37 @@ footer {
 
   .panel {
     border: 0;
-    padding: 10px;
+    border-top: 2px solid var(--line);
+    padding: 12px 12px calc(12px + env(safe-area-inset-bottom));
     gap: 10px;
-    overflow: visible;
+    flex: 0 0 clamp(260px, 43svh, 390px);
+    overflow-y: auto;
+    overscroll-behavior: contain;
     -webkit-overflow-scrolling: touch;
+  }
+
+  .thumbnail-preview {
+    display: none;
+  }
+
+  .controls {
+    order: 1;
+  }
+
+  .shop {
+    order: 2;
+  }
+
+  .stats {
+    order: 3;
+  }
+
+  .hall {
+    order: 4;
+  }
+
+  .log {
+    order: 5;
   }
 
   .stats {
@@ -623,10 +651,13 @@ footer {
   }
 
   .controls button {
-    min-height: 48px;
-    padding: 8px;
+    min-height: 52px;
+    padding: 10px 11px;
     font-size: 13px;
+    line-height: 1.2;
     overflow-wrap: anywhere;
+    white-space: normal;
+    align-items: center;
   }
 
   .controls b {
@@ -659,15 +690,15 @@ footer {
   }
 
   body.shop-mode .shop-items {
-    max-height: min(42svh, 310px);
+    max-height: min(30svh, 260px);
     overflow-y: auto;
     overscroll-behavior: contain;
-    padding-right: 4px;
+    padding: 2px 7px 2px 1px;
     -webkit-overflow-scrolling: touch;
   }
 
   body.shop-mode .shop button {
-    min-height: 56px;
+    min-height: 60px;
   }
 
   body.shop-mode #shopHint {
@@ -684,13 +715,15 @@ footer {
   }
 
   .shop button {
-    min-height: 44px;
-    padding: 7px 8px;
+    min-height: 52px;
+    padding: 10px 11px;
     display: grid;
     grid-template-columns: minmax(0, 1fr) auto;
     gap: 4px 8px;
     align-items: center;
     font-size: 13px;
+    line-height: 1.22;
+    white-space: normal;
   }
 
   .shop button b {
@@ -712,16 +745,14 @@ footer {
   footer {
     width: 100%;
     margin: 0;
-    padding: 6px 10px 8px;
+    padding: 6px 10px calc(8px + env(safe-area-inset-bottom));
     background: var(--panel);
   }
 }
 
 @media (max-width: 520px) {
   .game-wrap {
-    height: auto;
     min-height: 190px;
-    max-height: min(52svh, 300px);
   }
 
   .overlay {
@@ -771,6 +802,7 @@ footer {
 
   .shop button {
     grid-template-columns: 1fr;
+    padding-inline: 12px;
   }
 
   .shop button b {
