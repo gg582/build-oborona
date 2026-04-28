@@ -1206,7 +1206,11 @@ function update(dt) {
   state.concertPoliceBoost = state.concertTimer > 0 ? 1.08 : 1;
   state.joseonPunkTimer = Math.max(0, state.joseonPunkTimer - dt);
   state.joseonPunkFlash = Math.max(0, state.joseonPunkFlash - dt);
+  const wasPsychedeliaActive = state.psychedeliaTimer > 0;
   state.psychedeliaTimer = Math.max(0, state.psychedeliaTimer - dt);
+  if (wasPsychedeliaActive && state.psychedeliaTimer <= 0 && state.clubBrand === "PINK CIGAR") {
+    state.clubBrand = "PUNK CLUB";
+  }
   state.notes = state.notes.filter(n => (n.life -= dt) > 0);
   state.sparks = state.sparks.filter(s => (s.life -= dt) > 0);
   state.shopFlash = Math.max(0, state.shopFlash - dt);
@@ -1670,6 +1674,14 @@ function drawAttract() {
 }
 
 function drawClub(c) {
+  const pinkCigarActive = state && state.clubBrand === "PINK CIGAR" && state.psychedeliaTimer > 0;
+  if (pinkCigarActive) {
+    ctx.save();
+    ctx.translate(c.x + c.w / 2, c.y + c.h / 2);
+    ctx.rotate(Math.PI);
+    ctx.translate(-(c.x + c.w / 2), -(c.y + c.h / 2));
+  }
+
   ctx.fillStyle = "#191817";
   ctx.fillRect(c.x, c.y, c.w, c.h);
   ctx.strokeStyle = nearClubRect(c) ? "#20d6b5" : "#6f655a";
@@ -1701,6 +1713,8 @@ function drawClub(c) {
   ctx.fillStyle = "#ffc857";
   ctx.font = "700 12px monospace";
   ctx.fillText("SPACE", c.x + 49, c.y + 120);
+
+  if (pinkCigarActive) ctx.restore();
 }
 
 function drawElectricGuitar(x, y, scale = 1) {
