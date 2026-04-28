@@ -225,7 +225,8 @@ function ensurePunkAudio() {
     bossReady: false,
     streetAudio: null,
     bossAudio: null,
-    current: null
+    current: null,
+    awaitingBoss: false
   };
   return punkAudio;
 }
@@ -236,13 +237,17 @@ async function togglePunkAudio() {
   syncPunkToggle();
   if (!punk.enabled) {
     stopPunkTracks();
+    punk.awaitingBoss = false;
     log("펑크 음원 모드 해제. 기존 미디 리프를 다시 사용한다.");
     return;
   }
   ensureAudioReady();
   log("펑크와 함께하기. 01.mp3를 전부 받을 때까지 기존 미디 리프를 유지한다.");
   loadPunkTrack("street");
-  if (punk.streetReady) playPunkTrack(punk.bossReady && isBossPhase() ? "boss" : "street");
+  if (punk.streetReady) {
+    if (isBossPhase()) checkBossTrack();
+    else playPunkTrack("street");
+  }
 }
 
 function ensureAudioReady() {
@@ -265,10 +270,16 @@ async function loadPunkTrack(kind) {
     if (kind === "street") {
       log("01.mp3 다운로드 완료. 기존 미디를 끄고 음원을 재생한다.");
       loadPunkTrack("boss");
-      if (punk.enabled) playPunkTrack(isBossPhase() && punk.bossReady ? "boss" : "street");
+      if (punk.enabled) {
+        if (isBossPhase()) checkBossTrack();
+        else playPunkTrack("street");
+      }
     } else {
       log("02.mp3 다운로드 완료. 보스전 진입 시 전환 준비 완료.");
-      if (punk.enabled && isBossPhase()) playPunkTrack("boss");
+      if (punk.enabled && isBossPhase()) {
+        punk.awaitingBoss = false;
+        playPunkTrack("boss");
+      }
     }
     syncPunkToggle();
   } catch {
@@ -342,6 +353,7 @@ function playPunkTrack(kind) {
   const other = kind === "boss" ? punk.streetAudio : punk.bossAudio;
   if (other && !other.paused) other.pause();
   if (other) other.currentTime = 0;
+  punk.awaitingBoss = false;
   punk.current = kind;
   target.play().catch(() => {
     punk.current = null;
@@ -363,7 +375,7 @@ function stopPunkTracks() {
 
 function shouldUseExternalMusic() {
   const punk = ensurePunkAudio();
-  return punk.enabled && punk.streetReady && punk.current;
+  return punk.enabled && punk.streetReady && (punk.current || punk.awaitingBoss);
 }
 
 function isBossPhase() {
@@ -377,9 +389,14 @@ function checkBossTrack() {
     playPunkTrack("boss");
     log("보스전 음원 확인: 02.mp3 준비 완료, 전환한다.");
   } else {
+    punk.awaitingBoss = true;
+    if (punk.streetAudio && !punk.streetAudio.paused) punk.streetAudio.pause();
+    if (punk.bossAudio && !punk.bossAudio.paused) punk.bossAudio.pause();
+    punk.current = null;
     loadPunkTrack("boss");
-    log("보스전 음원 확인: 02.mp3가 아직 준비되지 않아 현재 음원을 유지한다.");
+    log("보스전 음원 확인: 02.mp3가 아직 준비되지 않아 완전 다운로드를 기다린다.");
   }
+  syncPunkToggle();
 }
 
 function syncPunkToggle() {
@@ -389,6 +406,7 @@ function syncPunkToggle() {
   if (punk.enabled) {
     if (punk.current === "boss") label = "02";
     else if (punk.current === "street") label = "01";
+    else if (punk.awaitingBoss) label = "WAIT";
     else if (punk.loadingStreet) label = "LOAD";
     else label = "ON";
   }
