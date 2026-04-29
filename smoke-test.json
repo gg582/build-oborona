@@ -1,0 +1,36 @@
+{
+  "requests": [
+    {
+      "method": "GET",
+      "path": "/health",
+      "expectStatus": 200
+    },
+    {
+      "method": "GET",
+      "path": "/",
+      "expectStatus": 200
+    },
+    {
+      "method": "POST",
+      "path": "/api/scores",
+      "headers": {
+        "content-type": "application/json"
+      },
+      "body": {
+        "name": "Smoke Punk",
+        "score": 1234,
+        "character": "예고르",
+        "location": "서울",
+        "title": "스모크 전당",
+        "titleDescription": "Persistence smoke test"
+      },
+      "expectStatus": 201
+    },
+    {
+      "method": "GET",
+      "path": "/api/scores",
+      "expectStatus": 200,
+      "expectBodyContains": "Smoke Punk"
+    }
+  ]
+}

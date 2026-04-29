@@ -16,6 +16,7 @@ const ui = {
   skill: document.getElementById("skill"),
   concert: document.getElementById("concert"),
   punkToggle: document.getElementById("punkToggle"),
+  punkStatus: document.getElementById("punkStatus"),
   location: document.getElementById("location"),
   crew: document.getElementById("crew"),
   titleStatus: document.getElementById("titleStatus"),
@@ -87,7 +88,11 @@ const PUNK_TRACKS = {
   street: "https://www.gr-oborona.ru/mp3/1985-poganaja_molodezh/01.mp3",
   boss: "https://www.gr-oborona.ru/mp3/1993-sto_let_odinochestva/02.mp3"
 };
-const PUNK_TRACK_LOAD_TIMEOUT_MS = 10000;
+const PUNK_TRACK_LOAD_TIMEOUT_MS = 15000;
+const PUNK_TRACK_RETRIES = 2;
+const PUNK_TRACK_RETRY_DELAY_MS = 350;
+const PUNK_LOADING_MESSAGE = "옴스크에서 서울까지 펑크가 질주하고 있습니다...";
+const PUNK_READY_MESSAGE = "로딩 완료!";
 
 const clearTitles = {
   tiger: {
@@ -227,7 +232,9 @@ function ensurePunkAudio() {
     streetAudio: null,
     bossAudio: null,
     current: null,
-    awaitingBoss: false
+    awaitingBoss: false,
+    playRequested: false,
+    loadPromise: null
   };
   return punkAudio;
 }
@@ -235,16 +242,21 @@ function ensurePunkAudio() {
 async function togglePunkAudio() {
   const punk = ensurePunkAudio();
   punk.enabled = !punk.enabled;
+  punk.playRequested = punk.enabled;
   syncPunkToggle();
   if (!punk.enabled) {
     stopPunkTracks();
     punk.awaitingBoss = false;
+    punk.playRequested = false;
+    setPunkStatus("");
     log("펑크 음원 모드 해제. 기존 미디 리프를 다시 사용한다.");
     return;
   }
   ensureAudioReady();
+  setPunkStatus(allPunkTracksReady(punk) ? PUNK_READY_MESSAGE : PUNK_LOADING_MESSAGE);
   log("펑크와 함께하기. 음원이 재생 가능해지면 바로 전환한다.");
-  loadPunkTrack("street");
+  requestImmediatePunkPlayback(isBossPhase() ? "boss" : "street");
+  preloadPunkTracks();
   if (punk.streetReady) {
     if (isBossPhase()) checkBossTrack();
     else playPunkTrack("street");
@@ -270,18 +282,12 @@ async function loadPunkTrack(kind) {
     punk[loadingKey] = false;
     if (kind === "street") {
       log("01.mp3 다운로드 완료. 기존 미디를 끄고 음원을 재생한다.");
-      loadPunkTrack("boss");
-      if (punk.enabled) {
-        if (isBossPhase()) checkBossTrack();
-        else playPunkTrack("street");
-      }
+      if (punk.enabled) playPreferredPunkTrack();
     } else {
       log("02.mp3 다운로드 완료. 보스전 진입 시 전환 준비 완료.");
-      if (punk.enabled && isBossPhase()) {
-        punk.awaitingBoss = false;
-        playPunkTrack("boss");
-      }
+      if (punk.enabled) playPreferredPunkTrack();
     }
+    if (punk.enabled && allPunkTracksReady(punk)) setPunkStatus(PUNK_READY_MESSAGE);
     syncPunkToggle();
   } catch {
     punk[loadingKey] = false;
@@ -292,12 +298,68 @@ async function loadPunkTrack(kind) {
     log(kind === "boss"
       ? "02.mp3 재생 준비 실패. 보스전에서도 01.mp3 또는 기존 미디를 유지한다."
       : "01.mp3 재생 준비 실패. 외부 음원 대신 기존 미디 리프를 유지한다.");
+    if (punk.enabled && !allPunkTracksReady(punk)) {
+      setPunkStatus("외부 음원 로딩 실패. 다시 누르면 재시도합니다.");
+    }
     syncPunkToggle();
   }
 }
 
 async function fetchPunkTrack(kind) {
-  return loadDirectPunkTrack(kind);
+  let lastError = null;
+  for (let attempt = 0; attempt <= PUNK_TRACK_RETRIES; attempt++) {
+    try {
+      const punk = ensurePunkAudio();
+      const existing = kind === "boss" ? punk.bossAudio : punk.streetAudio;
+      if (existing) return await loadDirectPunkTrack(kind);
+      return await loadFetchedPunkTrack(kind);
+    } catch (error) {
+      lastError = error;
+      try {
+        return await loadDirectPunkTrack(kind);
+      } catch (directError) {
+        lastError = directError;
+      }
+      if (attempt < PUNK_TRACK_RETRIES) {
+        await wait(PUNK_TRACK_RETRY_DELAY_MS * (attempt + 1));
+      }
+    }
+  }
+  throw lastError || new Error("track preload failed");
+}
+
+function preloadPunkTracks() {
+  const punk = ensurePunkAudio();
+  if (allPunkTracksReady(punk)) {
+    setPunkStatus(PUNK_READY_MESSAGE);
+    return Promise.resolve();
+  }
+  if (!punk.loadPromise) {
+    setPunkStatus(PUNK_LOADING_MESSAGE);
+    punk.loadPromise = Promise.allSettled([
+      loadPunkTrack("street"),
+      loadPunkTrack("boss")
+    ]).finally(() => {
+      punk.loadPromise = null;
+      if (!punk.enabled) return;
+      setPunkStatus(allPunkTracksReady(punk)
+        ? PUNK_READY_MESSAGE
+        : "외부 음원 로딩 실패. 다시 누르면 재시도합니다.");
+    });
+  }
+  return punk.loadPromise;
+}
+
+function allPunkTracksReady(punk = ensurePunkAudio()) {
+  return punk.streetReady && punk.bossReady;
+}
+
+function wait(ms) {
+  return new Promise(resolve => window.setTimeout(resolve, ms));
+}
+
+function setPunkStatus(text) {
+  if (ui.punkStatus) ui.punkStatus.textContent = text;
 }
 
 function configurePunkTrack(track, kind) {
@@ -307,9 +369,86 @@ function configurePunkTrack(track, kind) {
   return track;
 }
 
+function requestImmediatePunkPlayback(kind) {
+  const punk = ensurePunkAudio();
+  const targetKind = kind === "boss" ? "boss" : "street";
+  const target = ensureDirectPunkTrack(targetKind);
+  const readyKey = targetKind === "boss" ? "bossReady" : "streetReady";
+  if (isTrackPlayable(target)) punk[readyKey] = true;
+  if (targetKind === "boss" && !punk.bossReady) {
+    punk.awaitingBoss = true;
+  }
+  if (target.networkState === target.NETWORK_EMPTY) target.load();
+  playPunkTrack(targetKind, { fromGesture: true });
+}
+
+function ensureDirectPunkTrack(kind) {
+  const punk = ensurePunkAudio();
+  const audioKey = kind === "boss" ? "bossAudio" : "streetAudio";
+  const readyKey = kind === "boss" ? "bossReady" : "streetReady";
+  if (punk[audioKey]) return punk[audioKey];
+  const track = configurePunkTrack(new Audio(PUNK_TRACKS[kind]), kind);
+  track.addEventListener("canplay", () => {
+    punk[readyKey] = true;
+    if (punk.enabled && punk.playRequested) playPreferredPunkTrack();
+    syncPunkToggle();
+  });
+  track.addEventListener("canplaythrough", () => {
+    punk[readyKey] = true;
+    if (punk.enabled && punk.playRequested) playPreferredPunkTrack();
+    syncPunkToggle();
+  });
+  track.addEventListener("loadeddata", () => {
+    punk[readyKey] = true;
+    if (punk.enabled && punk.playRequested) playPreferredPunkTrack();
+    syncPunkToggle();
+  });
+  punk[audioKey] = track;
+  return track;
+}
+
+async function loadFetchedPunkTrack(kind) {
+  if (!window.fetch || !window.AbortController || !window.URL) {
+    throw new Error("fetch preload unavailable");
+  }
+  const controller = new AbortController();
+  const timeout = window.setTimeout(() => controller.abort(), PUNK_TRACK_LOAD_TIMEOUT_MS);
+  try {
+    const response = await fetch(PUNK_TRACKS[kind], {
+      mode: "cors",
+      cache: "force-cache",
+      signal: controller.signal
+    });
+    if (!response.ok) throw new Error("track fetch failed");
+    const blob = await response.blob();
+    if (!blob.size) throw new Error("empty track response");
+    const objectUrl = URL.createObjectURL(blob);
+    try {
+      return await loadAudioElement(objectUrl, kind, objectUrl);
+    } catch (error) {
+      URL.revokeObjectURL(objectUrl);
+      throw error;
+    }
+  } finally {
+    window.clearTimeout(timeout);
+  }
+}
+
 function loadDirectPunkTrack(kind) {
+  const track = ensureDirectPunkTrack(kind);
+  if (isTrackPlayable(track)) return Promise.resolve(track);
+  if (track.networkState === track.NETWORK_EMPTY) track.load();
+  return waitForAudioElement(track);
+}
+
+function loadAudioElement(src, kind, objectUrl = "") {
+  const track = configurePunkTrack(new Audio(src), kind);
+  track.dataset.objectUrl = objectUrl;
+  return waitForAudioElement(track);
+}
+
+function waitForAudioElement(track) {
   return new Promise((resolve, reject) => {
-    const track = configurePunkTrack(new Audio(PUNK_TRACKS[kind]), kind);
     let done = false;
     const timeout = window.setTimeout(() => finish(false), PUNK_TRACK_LOAD_TIMEOUT_MS);
     const cleanup = () => {
@@ -334,7 +473,7 @@ function loadDirectPunkTrack(kind) {
     track.addEventListener("canplay", onPlayable);
     track.addEventListener("canplaythrough", onPlayable);
     track.addEventListener("loadeddata", onPlayable);
-    track.load();
+    if (track.networkState === track.NETWORK_EMPTY) track.load();
     if (isTrackPlayable(track)) finish(true);
   });
 }
@@ -343,7 +482,7 @@ function isTrackPlayable(track) {
   return track.readyState >= HTMLMediaElement.HAVE_FUTURE_DATA;
 }
 
-function playPunkTrack(kind) {
+function playPunkTrack(kind, options = {}) {
   const punk = ensurePunkAudio();
   if (!punk.enabled) return;
   const target = kind === "boss" ? punk.bossAudio : punk.streetAudio;
@@ -355,10 +494,27 @@ function playPunkTrack(kind) {
   punk.current = kind;
   target.play().catch(() => {
     punk.current = null;
-    log("브라우저가 음원 자동 재생을 막았다. 펑크와 함께하기를 다시 누르면 재생을 시도한다.");
+    if (options && options.fromGesture) {
+      log("음원 파일을 받는 중입니다. 다운로드가 끝나면 즉시 재생을 다시 시도합니다.");
+    } else {
+      log("브라우저가 음원 자동 재생을 막았다. 펑크와 함께하기를 다시 누르면 재생을 시도한다.");
+    }
     syncPunkToggle();
   });
   syncPunkToggle();
+}
+
+function playPreferredPunkTrack() {
+  const punk = ensurePunkAudio();
+  if (!punk.enabled || !punk.playRequested) return;
+  if (isBossPhase()) {
+    if (punk.bossReady) {
+      playPunkTrack("boss");
+      return;
+    }
+    punk.awaitingBoss = true;
+  }
+  if (punk.streetReady || punk.streetAudio) playPunkTrack("street");
 }
 
 function stopPunkTracks() {
@@ -403,7 +559,7 @@ function syncPunkToggle() {
     if (punk.current === "boss") label = "02";
     else if (punk.current === "street") label = "01";
     else if (punk.awaitingBoss) label = "WAIT";
-    else if (punk.loadingStreet) label = "LOAD";
+    else if (punk.loadingStreet || punk.loadingBoss) label = "LOAD";
     else label = "ON";
   }
   ui.punkToggle.setAttribute("aria-pressed", punk.enabled ? "true" : "false");
@@ -1032,6 +1188,12 @@ ui.shopItems.addEventListener("click", event => {
 });
 ui.refreshScores.addEventListener("click", loadScores);
 ui.scoreForm.addEventListener("submit", submitScore);
+ui.scoreList.addEventListener("click", event => {
+  const renameButton = event.target.closest("[data-rename-score]");
+  const deleteButton = event.target.closest("[data-delete-score]");
+  if (renameButton) renameScore(renameButton.dataset.renameScore);
+  if (deleteButton) deleteScore(deleteButton.dataset.deleteScore);
+});
 
 window.addEventListener("keydown", event => {
   if (event.target instanceof HTMLInputElement) return;
@@ -1538,6 +1700,10 @@ function renderScores(scores) {
       <span class="rank">${index + 1}</span>
       <span class="runner">${escapeHtml(entry.name)}</span>
       <strong>${Number(entry.score || 0).toLocaleString("ko-KR")}</strong>
+      <span class="score-actions">
+        <button type="button" data-rename-score="${Number(entry.id)}">수정</button>
+        <button type="button" data-delete-score="${Number(entry.id)}">삭제</button>
+      </span>
       <small>${escapeHtml(entry.character || "")} · ${escapeHtml(entry.location || "")} · ${escapeHtml(entry.title || "칭호 없음")}</small>
     </li>
   `).join("");
@@ -1565,6 +1731,38 @@ async function submitScore(event) {
     renderScores(data.scores || []);
   } catch {
     ui.scoreStatus.textContent = "등록에 실패했습니다. 다시 시도하세요.";
+  }
+}
+
+async function renameScore(id) {
+  const name = window.prompt("새 이름을 입력하세요.", "");
+  if (name === null) return;
+  try {
+    const response = await fetch(`/api/scores/${encodeURIComponent(id)}`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json", accept: "application/json" },
+      body: JSON.stringify({ name })
+    });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || "rename failed");
+    renderScores(data.scores || []);
+  } catch {
+    ui.scoreList.innerHTML = "<li>기록을 수정하지 못했습니다.</li>";
+  }
+}
+
+async function deleteScore(id) {
+  if (!window.confirm("이 전당 기록을 삭제할까요?")) return;
+  try {
+    const response = await fetch(`/api/scores/${encodeURIComponent(id)}`, {
+      method: "DELETE",
+      headers: { accept: "application/json" }
+    });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || "delete failed");
+    renderScores(data.scores || []);
+  } catch {
+    ui.scoreList.innerHTML = "<li>기록을 삭제하지 못했습니다.</li>";
   }
 }
 

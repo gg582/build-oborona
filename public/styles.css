@@ -374,6 +374,15 @@ button:disabled {
   text-align: center;
 }
 
+.punk-status {
+  min-height: 18px;
+  margin-top: -3px;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 800;
+  line-height: 1.25;
+}
+
 .shop h2 {
   margin: 0 0 8px;
   font-size: 17px;
@@ -464,7 +473,7 @@ button:disabled {
   min-height: 46px;
   padding: 7px 8px;
   display: grid;
-  grid-template-columns: 26px minmax(0, 1fr) auto;
+  grid-template-columns: 26px minmax(0, 1fr) auto auto;
   gap: 4px 8px;
   align-items: center;
   background: #181715;
@@ -502,6 +511,21 @@ button:disabled {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.score-actions {
+  display: flex;
+  gap: 4px;
+}
+
+.score-actions button {
+  min-height: 26px;
+  padding: 0 7px;
+  border: 1px solid #575149;
+  background: #242321;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 900;
 }
 
 .log {
@@ -666,6 +690,11 @@ footer {
     display: none;
   }
 
+  .punk-status {
+    grid-column: 1 / -1;
+    font-size: 11px;
+  }
+
   .shop h2 {
     font-size: 15px;
   }
@@ -709,6 +738,14 @@ footer {
 
   .hall h2 {
     font-size: 15px;
+  }
+
+  .score-list li {
+    grid-template-columns: 24px minmax(0, 1fr) auto;
+  }
+
+  .score-actions {
+    grid-column: 2 / -1;
   }
 
   .shop-items {

@@ -1,70 +1,63 @@
-const http = require("http");
+const express = require("express");
 const fs = require("fs");
 const path = require("path");
 
-const port = process.env.PORT || 3000;
+const port = Number(process.env.PORT) || 8080;
+const host = "0.0.0.0";
 const publicDir = path.join(__dirname, "public");
-const dataDir = process.env.DATA_DIR || (process.env.NODE_ENV === "production" ? "/app/data" : path.join(__dirname, "data"));
-const scoresFile = path.join(dataDir, "scores.json");
-const maxBodyBytes = 4096;
+const migrationsDir = path.join(__dirname, "migrations");
+const sqlitePath = process.env.SQLITE_PATH || "/data/app.sqlite";
+const maxBodyBytes = "4kb";
 
-const types = {
-  ".html": "text/html; charset=utf-8",
-  ".css": "text/css; charset=utf-8",
-  ".js": "application/javascript; charset=utf-8",
-  ".jpg": "image/jpeg",
-  ".jpeg": "image/jpeg",
-  ".png": "image/png",
-  ".svg": "image/svg+xml; charset=utf-8",
-  ".json": "application/json; charset=utf-8",
-  ".txt": "text/plain; charset=utf-8"
-};
+let db;
+let dbReadyPromise;
 
-function send(res, status, body, type = "text/plain; charset=utf-8") {
-  res.writeHead(status, {
-    "content-type": type,
-    "cache-control": status === 200 ? "public, max-age=3600" : "no-store",
-    "x-content-type-options": "nosniff"
-  });
-  res.end(body);
-}
+function runMigrations() {
+  runSql(`
+    CREATE TABLE IF NOT EXISTS schema_migrations (
+      version TEXT PRIMARY KEY,
+      applied_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+    );
+  `);
 
-function sendJson(res, status, value) {
-  res.writeHead(status, {
-    "content-type": "application/json; charset=utf-8",
-    "cache-control": "no-store",
-    "x-content-type-options": "nosniff"
-  });
-  res.end(JSON.stringify(value));
-}
+  const applied = new Set(
+    allRows("SELECT version FROM schema_migrations").map(row => row.version)
+  );
+  const files = fs
+    .readdirSync(migrationsDir)
+    .filter(file => /^\d+_.+\.sql$/.test(file))
+    .sort();
 
-function readScores() {
-  try {
-    const raw = fs.readFileSync(scoresFile, "utf8");
-    const parsed = JSON.parse(raw);
-    if (!Array.isArray(parsed)) return [];
-    return parsed
-      .filter(entry => entry && typeof entry.name === "string" && Number.isFinite(entry.score))
-      .map(entry => ({
-        name: entry.name.slice(0, 16),
-        score: Math.max(0, Math.floor(entry.score)),
-        character: typeof entry.character === "string" ? entry.character.slice(0, 16) : "unknown",
-        location: typeof entry.location === "string" ? entry.location.slice(0, 24) : "",
-        title: typeof entry.title === "string" ? entry.title.slice(0, 32) : "",
-        titleDescription: typeof entry.titleDescription === "string" ? entry.titleDescription.slice(0, 240) : "",
-        createdAt: typeof entry.createdAt === "string" ? entry.createdAt : new Date().toISOString()
-      }))
-      .sort((a, b) => b.score - a.score)
-      .slice(0, 20);
-  } catch {
-    return [];
+  for (const file of files) {
+    if (applied.has(file)) continue;
+    const sql = fs.readFileSync(path.join(migrationsDir, file), "utf8");
+    runSql("BEGIN");
+    try {
+      runSql(sql);
+      runSql("INSERT INTO schema_migrations (version) VALUES (?)", [file]);
+      runSql("COMMIT");
+      saveDatabase();
+    } catch (error) {
+      runSql("ROLLBACK");
+      throw error;
+    }
   }
 }
 
-function writeScores(scores) {
-  fs.mkdirSync(dataDir, { recursive: true });
-  fs.writeFileSync(scoresFile, JSON.stringify(scores, null, 2));
-}
+const app = express();
+app.disable("x-powered-by");
+
+app.get("/health", (req, res) => {
+  res.type("text/plain").status(200).send("OK");
+});
+
+app.use(express.json({ limit: maxBodyBytes }));
+app.use(express.static(publicDir, {
+  index: "index.html",
+  setHeaders(res) {
+    res.setHeader("x-content-type-options", "nosniff");
+  }
+}));
 
 function cleanName(value) {
   return String(value || "")
@@ -82,95 +75,183 @@ function cleanText(value, limit) {
     .slice(0, limit);
 }
 
-function handleScoresPost(req, res) {
-  let body = "";
-  req.on("data", chunk => {
-    body += chunk;
-    if (Buffer.byteLength(body) > maxBodyBytes) {
-      req.destroy();
-    }
-  });
-  req.on("end", () => {
-    let payload;
-    try {
-      payload = JSON.parse(body || "{}");
-    } catch {
-      sendJson(res, 400, { error: "Invalid JSON" });
-      return;
-    }
-
-    const scoreValue = Number(payload.score);
-    if (!Number.isFinite(scoreValue) || scoreValue < 0) {
-      sendJson(res, 400, { error: "Score must be zero or positive" });
-      return;
-    }
-    const score = Math.max(0, Math.min(999999999, Math.floor(scoreValue)));
-
-    const entry = {
-      name: cleanName(payload.name),
-      score,
-      character: cleanName(payload.character || "unknown"),
-      location: cleanName(payload.location || ""),
-      title: cleanText(payload.title || "칭호 없음", 32) || "칭호 없음",
-      titleDescription: cleanText(payload.titleDescription || "", 240),
-      createdAt: new Date().toISOString()
-    };
-    const scores = [...readScores(), entry].sort((a, b) => b.score - a.score).slice(0, 20);
-    writeScores(scores);
-    sendJson(res, 201, { scores, entry });
-  });
-  req.on("error", () => sendJson(res, 400, { error: "Request failed" }));
+function scoreRow(row) {
+  return {
+    id: row.id,
+    name: row.name,
+    score: row.score,
+    character: row.character,
+    location: row.location,
+    title: row.title,
+    titleDescription: row.title_description,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at
+  };
 }
 
-function resolveStaticPath(urlPath) {
-  let cleanPath = "/";
+function readScores(limit = 20) {
+  return allRows(`
+    SELECT id, name, score, character, location, title, title_description, created_at, updated_at
+    FROM scores
+    ORDER BY score DESC, created_at ASC
+    LIMIT ?
+  `, [limit]).map(scoreRow);
+}
+
+function scorePayload(body) {
+  const scoreValue = Number(body.score);
+  if (!Number.isFinite(scoreValue) || scoreValue < 0) {
+    const error = new Error("Score must be zero or positive");
+    error.status = 400;
+    throw error;
+  }
+
+  return {
+    name: cleanName(body.name),
+    score: Math.max(0, Math.min(999999999, Math.floor(scoreValue))),
+    character: cleanName(body.character || "unknown"),
+    location: cleanName(body.location || ""),
+    title: cleanText(body.title || "칭호 없음", 32) || "칭호 없음",
+    titleDescription: cleanText(body.titleDescription || "", 240)
+  };
+}
+
+app.use("/api", async (req, res, next) => {
+  if (!dbReadyPromise) {
+    res.status(503).json({ error: "Database is starting" });
+    return;
+  }
   try {
-    cleanPath = decodeURIComponent(urlPath.split("?")[0]);
-  } catch {
-    return null;
+    await dbReadyPromise;
+    next();
+  } catch (error) {
+    res.status(503).json({ error: "Database is not ready" });
   }
-  const safePath = path.normalize(cleanPath).replace(/^(\.\.[/\\])+/, "");
-  const filePath = path.join(publicDir, safePath === "/" ? "index.html" : safePath);
-  const relative = path.relative(publicDir, filePath);
-  return relative && !relative.startsWith("..") && !path.isAbsolute(relative) ? filePath : null;
-}
-
-const server = http.createServer((req, res) => {
-  if (req.url === "/health") {
-    send(res, 200, "OK");
-    return;
-  }
-
-  if (req.url === "/api/scores" && req.method === "GET") {
-    sendJson(res, 200, { scores: readScores() });
-    return;
-  }
-
-  if (req.url === "/api/scores" && req.method === "POST") {
-    handleScoresPost(req, res);
-    return;
-  }
-
-  if (req.url === "/api/scores") {
-    sendJson(res, 405, { error: "Method not allowed" });
-    return;
-  }
-
-  const filePath = resolveStaticPath(req.url || "/");
-  if (!filePath) {
-    send(res, 403, "Forbidden");
-    return;
-  }
-
-  fs.readFile(filePath, (error, data) => {
-    if (error) {
-      send(res, 404, "Not found");
-      return;
-    }
-    send(res, 200, data, types[path.extname(filePath)] || "application/octet-stream");
-  });
 });
 
-server.listen(port, "0.0.0.0", () => {
-  console.log(`오보로나 listening on 0.0.0.0:${port}`);
+app.get("/api/scores", (req, res) => {
+  res.json({ scores: readScores() });
+});
+
+app.post("/api/scores", (req, res, next) => {
+  try {
+    const entry = scorePayload(req.body || {});
+    runSql(`
+      INSERT INTO scores (name, score, character, location, title, title_description)
+      VALUES (?, ?, ?, ?, ?, ?)
+    `, [entry.name, entry.score, entry.character, entry.location, entry.title, entry.titleDescription]);
+    const idRow = getRow("SELECT last_insert_rowid() AS id");
+    saveDatabase();
+    const saved = getRow(`
+      SELECT id, name, score, character, location, title, title_description, created_at, updated_at
+      FROM scores
+      WHERE id = ?
+    `, [idRow.id]);
+    res.status(201).json({ scores: readScores(), entry: scoreRow(saved) });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.patch("/api/scores/:id", (req, res, next) => {
+  try {
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id) || id <= 0) {
+      res.status(400).json({ error: "Invalid score id" });
+      return;
+    }
+    const name = cleanName(req.body && req.body.name);
+    runSql(`
+      UPDATE scores
+      SET name = ?, updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+      WHERE id = ?
+    `, [name, id]);
+    const changes = getRow("SELECT changes() AS changes").changes;
+    if (!changes) {
+      res.status(404).json({ error: "Score not found" });
+      return;
+    }
+    saveDatabase();
+    res.json({ scores: readScores() });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.delete("/api/scores/:id", (req, res) => {
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id) || id <= 0) {
+    res.status(400).json({ error: "Invalid score id" });
+    return;
+  }
+  runSql("DELETE FROM scores WHERE id = ?", [id]);
+  const changes = getRow("SELECT changes() AS changes").changes;
+  if (!changes) {
+    res.status(404).json({ error: "Score not found" });
+    return;
+  }
+  saveDatabase();
+  res.json({ scores: readScores() });
+});
+
+app.use((error, req, res, next) => {
+  if (error.type === "entity.too.large") {
+    res.status(413).json({ error: "Request body too large" });
+    return;
+  }
+  res.status(error.status || 500).json({ error: error.message || "Server error" });
+});
+
+function runSql(sql, params = []) {
+  db.run(sql, params);
+}
+
+function allRows(sql, params = []) {
+  const stmt = db.prepare(sql);
+  const rows = [];
+  try {
+    if (params.length) stmt.bind(params);
+    while (stmt.step()) rows.push(stmt.getAsObject());
+    return rows;
+  } finally {
+    stmt.free();
+  }
+}
+
+function getRow(sql, params = []) {
+  return allRows(sql, params)[0] || null;
+}
+
+function saveDatabase() {
+  const tmpPath = `${sqlitePath}.tmp`;
+  fs.writeFileSync(tmpPath, Buffer.from(db.export()));
+  fs.renameSync(tmpPath, sqlitePath);
+}
+
+async function initDatabase() {
+  const initSqlJs = require("sql.js");
+  fs.mkdirSync(path.dirname(sqlitePath), { recursive: true });
+  const wasmDir = path.dirname(require.resolve("sql.js/dist/sql-wasm.wasm"));
+  const SQL = await initSqlJs({ locateFile: file => path.join(wasmDir, file) });
+  const existing = fs.existsSync(sqlitePath) ? fs.readFileSync(sqlitePath) : null;
+  db = existing ? new SQL.Database(existing) : new SQL.Database();
+  runSql("PRAGMA foreign_keys=ON");
+  runSql("PRAGMA busy_timeout=5000");
+  try {
+    runSql("PRAGMA journal_mode=WAL");
+  } catch {}
+  runMigrations();
+  saveDatabase();
+}
+
+function startDatabaseSoon() {
+  dbReadyPromise = initDatabase();
+  dbReadyPromise.catch(error => {
+    console.error("Database initialization failed:", error);
+  });
+}
+
+app.listen(port, host, () => {
+  console.log(`오보로나 listening on ${host}:${port}`);
+  startDatabaseSoon();
 });
